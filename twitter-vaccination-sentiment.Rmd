@@ -1,5 +1,6 @@
 ---
-title: OpenCaseStudies Template
+title: Twitter Vaccination Sentiment Analysis
+author: "Alexandra Stephens"
 output: 
     html_document:
         theme: cosmo 
@@ -13,17 +14,177 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Motivation 
+# Motivation
 
-# What is the data? 
+Vaccination has become a disputed topic in recent years. Parents are making decisions whether or not to vaccinate their kids, in which the latter case puts them at higher risk of contracting diseases. Therefore it is important to identify communities who majorily do not opt to vaccinate their children, that are thus at higher risk of infectious diseases in order to implement preventative measures. In this document, we will attempt to classify opinion by analyzing public sentiment towards vaccinations with Tweets.
+
+# What is the data?
+
+In a seperate R file, a Twitter API call was used to download the data. Instructions to implement this can be found [here](https://medium.com/@GalarnykMichael/accessing-data-from-twitter-api-using-r-part1-b387a1c7d3e). The keywords and hashtags searched were "#antivax", "#vaccineswork", and "vaccination."
 
 # Data import
+First we import the libraries needed, then upload the data with `read.csv`.
+Make sure you have the libraries below installed before running the code.
+```{r}
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+library(wordcloud)
 
-# Data wrangling 
+tweets_df <- read.csv("data/since11_27_n500_hashtag_antivax4.csv",stringsAsFactors = FALSE)
+head(tweets_df)
+```
+
+
+# Data wrangling
+Since the Twitter API catures all tweets, including those that are retweets, we should remove duplicate Tweets. In this analysis we simply want to categorize the Tweets, so we won't need to keep track of which tweets are retweets or how many times a Tweet is retweeted or favorited (i.e. how popular it is). In any case, there is still the `retweetCount` column that keeps track of this if needed.
+
+```{r}
+tweets_df <- tweets_df[!duplicated(tweets_df$text),]
+head(tweets_df$text)
+```
+##The tidy text and NLP
+The tidy text format is using **one-token-per-row** in our dataframe. In short, tokens in natural language processing are words. To be technical, you could say a token is a list of characters between two spaces. Tokenization is the process of breaking up a string, or paragraph or document into word bits.
+
+So we want to tokenize our Tweets, however we don't want to lose any information. Specifically, we want to keep track of what Tweet each word came from since our analysis involves differentiating Tweets. Other analyses including topic summarization may not require keeping track of this--you can just a create a jumble (er, "corpus") of words and find commonalities.
+
+Thus we add the `int` column to the original dataframe `text_df` as an index for the Tweets. We then tokenize the text data with tidy text `unnest_tokens` and create a new dataframe `text_df`.
+
+```{r}
+text_df <- tweets_df %>% select("text")
+text_df$int <- c(1:length(text_df$text))
+text_df <- text_df %>%
+    unnest_tokens(word, text)
+head(text_df)
+```
+
+Next we want to remove stop words from the text. Stop words in NLP are common words that don't add value to a sentence, paragraph, document etc. For example, "still think the flu shot is" doesn't give us any extra information than "still think flu shot," so we can remove these words to make our dataset more concise.
+
+We load the `stop_words` dataset, which has two columns: `word` and `lexicon`. There are three different lexicons that reference the *source* of the stop word: ["onix"](http://www.lextek.com/manuals/onix/stopwords1.html), ["SMART"](http://www.jmlr.org/papers/volume5/lewis04a/lewis04a.pdf), and ["snowball."](http://snowball.tartarus.org/algorithms/english/stop.txt) We count the number of stop words in each category so that we can modify this if needed. (For example, if by removing all possible stop words we aren't left with enough information, we could instead just remove the 174 `snowball` stopwords).
+
+```{r}
+data(stop_words)
+
+stop_words %>% 
+    group_by(lexicon) %>% 
+    tally()
+
+text_df <- text_df %>%
+  anti_join(stop_words)
+```
 
 # Exploratory data analysis
 
-# Data analysis 
+A common NLP data exploration practice is looking at unigram frequencies.
+*N-grams* are sequences of N items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams. We'll dive deeper into applications of n-grams later (note to self), but we introduce the topic now because it is common to find n-gram frequencies, as we do below with unigrams.
+```{r}
+head(text_df %>%
+  count(word, sort = TRUE),10)
+```
+
+We can graph these word frequencies with ggplot for a nice visualization of our text data.
+```{r}
+text_df %>%
+  count(word, sort = TRUE) %>%
+  filter(n>10) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +
+  xlab(NULL) +
+  ylab(NULL) +
+  coord_flip()
+```
+(Note to self, how to deal with the "https" words?)
+
+For another fun exploration graphic, try word clouds!
+```{r}
+text_df %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  filter(word != "https" & word!= "t.co") %>%
+  with(wordcloud(word, n, max.words = 100))
+```
+
+##Sentiment
+We want to classify the Tweets by sentiment, or rather by the feelings and emotions portrayed by the user. As humans we can easily tell if someone is angry, sad, satisfied, or even sarcastic. However we have to give the computer some clues on how to do this start with the `sentiments` dataset which is loaded with the `tidytext` library. Similar to the `stop_words` dataset, there are three lexicons:
+
+* `afinn` gives each word an integer score between -5 and 5, from most negative to most positive sentiment.
+
+* `bing` gives a binary "negative" or "positive" sentiment to each words.
+
+* `nrc` assigns sentiment labels of "positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust."
+
+We can also use the tidytext's `get_sentiments()` function to only get data from a particular lexicon.
+
+```{r}
+head(sentiments)
+head(get_sentiments('afinn'))
+```
+"How were these sentiment lexicons put together and validated? They were constructed via either crowdsourcing (using, for example, Amazon Mechanical Turk) or by the labor of one of the authors, and were validated using some combination of crowdsourcing again, restaurant or movie reviews, or Twitter data. Given this information, we may hesitate to apply these sentiment lexicons to styles of text dramatically different from what they were validated on, such as narrative fiction from 200 years ago. While it is true that using these sentiment lexicons with, for example, Jane Austen’s novels may give us less accurate results than with tweets sent by a contemporary writer, we still can measure the sentiment content for words that are shared across the lexicon and the text."
+(note to self)
+
+Next let's merge some of our data with the sentiment lexicon "afinn" to explore our text.
+```{r}
+nrc_example <- get_sentiments("afinn") %>% 
+  filter(score == -3)
+
+head(text_df %>%
+  inner_join(nrc_example) %>%
+  count(word, sort = TRUE),10)
+```
+We note that this sentiment analysis will not be straight-forward. From the text printed above, we can't exactly pinpoint if the user is being negative about vaccinations, or just being negative about the anti-vaccination or vaccination communities (for example, the words "conspiracy" and "disgusted" could be referring to a number of topics).
+
+Let's plot the average `afinn` scores for each tweet to explore the overall sentiment of our data.
+
+```{r}
+library(tidyr)
+
+tweet_sentiment <- text_df %>%
+  inner_join(get_sentiments("afinn")) %>%
+  group_by(int) %>%
+  mutate(text = paste0(word)) %>%
+  summarize(sentiment_mean = mean(score))
+
+head(tweet_sentiment)
+ggplot(tweet_sentiment, aes(int, sentiment_mean)) +
+  geom_col(show.legend = FALSE) +
+  ggtitle("Mean afinn sentiment score per tweet") + 
+  ylab(NULL)
+ # #facet_wrap(~book, ncol = 2, scales = "free_x")
+
+
+```
+Let's print out some positive Tweets. We can use the index column "int" that we've kept constant to print out the original (sans and Twitter handles) Tweets.
+
+```{r}
+(positive <- tweet_sentiment$int[tweet_sentiment$sentiment_mean > 1])
+head(tweets_df$text[positive])
+```
+And let's look at some negative ones as well..
+```{r}
+(negative <- tweet_sentiment$int[tweet_sentiment$sentiment_mean < -1 ])
+head(tweets_df$text[negative])
+```
+Interestingly, most of these tweets seem to be from vaccination supporters speaking negatively about the "antivax movement." Now we can really see how this won't be easy!
+
+We should think about what we can do about the words that won't be found in the `sentiments` dataset, like "#vaccineswork" that might give us even more information about whether or not the tweet is supporting vaccines or not.
+
+Sentiment may be just a small part of clustering Tweets as "pro-vaccination" or "anti-vaccination."
+
+"However, social networks do
+provide other important information such as retweets, mentions etc., which may
+be used in identifying users’ opinion. Furthermore, the primary limiting factor in
+applying most supervised learning algorithms to identify opinions in Twitter is
+simply the lack of sufficient, reliable training data. Currently, researchers manually
+label or use services such as Amazon Mechanical Turk4
+to build training
+data for their supervised classifiers. However, such an approach is not practically
+feasible considering the diversity in topics and the huge volumes of tweets we
+are typically interested in. To overcome this obstacle, we design our framework
+such that very little manual effort is required to produce sufficient training data
+by exploiting patterns in the users’ retweeting behavior." http://www.public.asu.edu/~huanliu/papers/sbp14.pdf
+
+# Data analysis
 
 # Summary of results
 
