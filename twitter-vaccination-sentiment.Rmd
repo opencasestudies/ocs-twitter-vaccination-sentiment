@@ -302,7 +302,7 @@ vtx_df <- merge(vtx_df, seeds_df, by.x = "unique_vtcs", by.y = "uuidgens_user", 
 vtx_df$pro_vax[vtx_df$pro_vax == 0] <- 2
 
 g <- graph_from_data_frame(d = network_df, directed = FALSE, vertices = vtx_df)
-head(V(g))
+
 
 randn <- c(3:(sum(is.na(vtx_df$pro_vax) == TRUE)+2))
 vtx_df$pro_vax[is.na(vtx_df$pro_vax) == TRUE] <- randn
