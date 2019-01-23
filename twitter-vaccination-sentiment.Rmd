@@ -20,7 +20,7 @@ Vaccination has become a disputed topic in recent years. Parents are making deci
 
 This code primarily consists of data exploration and visualization using Natural Language Processing techniques along with a machine learning approach to classifying sides of a debate.
 
-The libraries used in this study are `tidytext`, `dplyr`, `ggplot2`, `wordcloud`, `SnowballC` ... In order to run this code please ensure you have these packages installed.
+The libraries used in this study are `tidytext`, `dplyr`, `ggplot2`, `wordcloud`, `SnowballC`, `igraph`, `threejs`, and `visNetwork`. In order to run this code please ensure you have these packages installed.
 
 The learning objectives include data cleaning and manipulation with Natural Language Processing, label propagation, Naive Bayes classification, other ML classification algorithms.
 
@@ -182,9 +182,10 @@ head(tweet_sentiment_ordered)
 
 tweet_sentiment_ordered$int <- factor(tweet_sentiment_ordered$int, levels = tweet_sentiment_ordered$int)
 
-ggplot(tweet_sentiment_ordered, aes(int, sentiment_mean)) +
-  geom_col(show.legend = FALSE) +
+ggplot(tweet_sentiment_ordered, aes(sentiment_mean)) +
+  geom_histogram(show.legend = FALSE, binwidth = .3) +
   ggtitle("Mean afinn sentiment score per tweet") + 
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "red") +
   ylab(NULL)
  # #facet_wrap(~book, ncol = 2, scales = "free_x")
 
@@ -222,7 +223,7 @@ To do this, we will use the power of Retweets and what are called seed users, or
 ```{r}
 library(stringr)
 
-pat <- c("[\r\n]|&amp.|@.*? |@.*?$|^RT |https:.* |https:.*$")
+pat <- c("[\r\n]|&amp.|@.*?\\S+|@.*?$|^RT |https?:.\\S+|https?:.*$")
 
 tweets_df$text <- 
   tweets_df$text %>%
