@@ -15,26 +15,49 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Motivation
+It is important to identify communities who are at higher risk of infectious diseases in order to implement preventative measures. In this document, we will classify Twitter users and their tweets as "pro" or "anti" vaccination. 
 
-Vaccination has become a disputed topic in recent years. Parents are making decisions whether or not to vaccinate their kids, in which the latter case puts them at higher risk of contracting diseases. Therefore it is important to identify communities who are at higher risk of infectious diseases in order to implement preventative measures. In this document, we will attempt to classify public opinion by analyzing sentiment towards vaccination on Twitter.
+This code consists of data exploration and visualization using Natural Language Processing techniques, a social network analysis of users with the `igraph` package, and a sentiment analysis of the results.
 
-This code primarily consists of data exploration and visualization using Natural Language Processing techniques along with a machine learning approach to classifying sides of a debate.
+The libraries used in this study are `stringr`, `tidytext`, `dplyr`, `ggplot2`, `wordcloud`, `SnowballC`, `igraph`, `threejs`, and `visNetwork`. In order to run this code please ensure you have these packages installed. If you would like to download your own Twitter data, you will need to sign up for mma Twitter developer account, create an application, and enter your own keys & credintials in the "What is the data?" section below.
 
-The libraries used in this study are `tidytext`, `dplyr`, `ggplot2`, `wordcloud`, `SnowballC`, `igraph`, `threejs`, and `visNetwork`. In order to run this code please ensure you have these packages installed.
-
-The learning objectives include data cleaning and manipulation with Natural Language Processing, label propagation, Naive Bayes classification, other ML classification algorithms.
+The learning objectives include data cleaning and manipulation with natural language processing & regular expressions, social network analysis, semi-supervised learning concepts, and sentiment.
 
 # What is the data?
+To collect data from Twitter, we suggest using the `rtweet` package. Again, if you would like to download your own Twitter data, you will need to sign up for a Twitter developer account, create an application, and enter your own keys below.
 
-In a separate R file, a Twitter API call was used to download the data. Instructions to implement this can be found [here](https://medium.com/@GalarnykMichael/accessing-data-from-twitter-api-using-r-part1-b387a1c7d3e). The keywords and hashtags searched were "#antivax", "#vaccineswork", and "vaccination."
+```{r eval=FALSE}
+library(rtweet)
 
-The API call included `n = 10000` thus we have 10,000 tweets downloaded. In the separate file (which will later be included in this repository), all identifiers have been removed including Twitter handles within a Tweet, which appear when a user is replying to or re-tweeting a Tweet.
+twitter_token <- create_token(
+  app = "twitter_app_name",
+  consumer_key = "XXXXXXXXXXXXXXX",
+  consumer_secret = "XXXXXXXXXXXXXXXXXXXXX",
+  access_token = "XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  access_secret = "XXXXXXXXXXXXXXXXX")
+```
+Once the twitter_token is create it is stored in the workspace and you are free to use all the functions in `rtweet`!
+
+The `search_tweets` function can download 18,000 every 15 minutes (with the free developer account). However adding `retryonratelimit = TRUE` automatically waits for the rate limit to be reset (after 15 min) and then searches for the remaining tweets. This is repeated until all requested tweets are downloaded.
+
+Below, we are searching for 18,000 recent tweets that contain the hashtags "antivax" or "vaccineswork", as well as just the word "vaccines".
+
+```{r eval=FALSE}
+st <- search_tweets('#antivax OR vaccines OR #vaccineswork', 
+                    n = 18000,
+                    type = "recent",
+                    include_rts = TRUE, 
+                    lang = "en")
+```
 
 # Data import
 First we import the libraries needed, then upload the data with `read.csv`.
 Make sure you have the libraries below installed before running the code.
 ```{r, message = FALSE}
-library(tidytext) 
+library(kableExtra)
+library(stringr)
+
+library(tidytext)
 library(dplyr)
 library(ggplot2)
 library(wordcloud)
@@ -44,25 +67,53 @@ library(igraph)
 library(threejs)
 library(visNetwork)
 
-#tweets_df <- read.csv("data/since11_27_n500_hashtag_antivax4.csv",stringsAsFactors = FALSE)
 tweets_df <- read.csv("data/date01_14_n18k_key2_uuidgens_final.csv",stringsAsFactors = FALSE)
-head(tweets_df)
 ```
 
 
 # Data wrangling
-Since the Twitter API captures all tweets, including those that are retweets, we should remove duplicate Tweets. In this analysis we simply want to categorize the Tweets, so we won't need to keep track of which tweets are retweets or how many times a Tweet is retweeted or favorited (i.e. how popular it is). In any case, there is still the `retweetCount` column that keeps track of this if needed.
+## Cleaning with regular expressions
+Using regular expressions to parse and clean text is an important skill when dealing with text data. Let's take a look at the data to see what we need to clean.
 
 ```{r}
-#tweets_df <- tweets_df[!duplicated(tweets_df$text),]
-#head(tweets_df$text)
+head(tweets_df$text)
 ```
-##The tidy text and NLP
+
+We want to remove text that does not aid our analysis and may in fact distract from our analysis. For example, we observe lots of links that begin with "https..." that aren't giving us any insightful information.
+
+The string `pat` below contains several regular expression or "regex" patterns that match with a few different unwanted characters or phrases. The "|" character seperates each expression, and when `str_replace_all` is called it checks for matches with every pattern in `pat`. `str_replace_all` also looks for repeats of any pattern, so if there are multiple links it will replace all of them with an empty space, `""`.
+
+|Regex Phrase|Text match|
+|---|---|
+|`[\r\n]`|Newline character|
+|`&amp.`|"&amp" phrase|The "." matches any character|
+|`@.*?\\S+`|Tagged user handle followed by whitespace|
+|`@.*?$`|Tagged user handle at the end of the tweet|
+|`https?:.*\\S+`|Embedded link followed by whitespace|
+|`https?:.*$`|Embedded link at the end of the tweet|
+
+
+```{r}
+pat <- "[\r\n]|&amp.|@.*?\\S+|@.*?$|https?:.*\\S+|https?:.*$"
+
+tweets_df$text <- 
+  tweets_df$text %>%
+    str_replace_all(pattern = pat, "")
+
+tweets_df$retweet_text <- 
+  tweets_df$retweet_text %>%
+    str_replace_all(pattern = pat, "")
+
+head(tweets_df$text)
+```
+
+## The tidy text and NLP
+
 The tidy text format is using **one-token-per-row** in our dataframe. In short, tokens in natural language processing are words. To be technical, you could say a token is a list of characters between two spaces. Tokenization is the process of breaking up a string, or paragraph or document into word bits.
 
-So we want to tokenize our Tweets, however we don't want to lose any information. Specifically, we want to keep track of what Tweet each word came from since our analysis involves differentiating Tweets. Other analyses including topic summarization may not require keeping track of this--you can just a create a jumble (er, "corpus") of words and find commonalities.
+So we want to tokenize our tweets, however we don't want to lose any information. Specifically, we want to keep track of what Tweet each word came from since our analysis involves differentiating tweets. Other analyses including topic summarization may not require keeping track of this--you can just a create a jumble (er, "corpus") of words and find commonalities.
 
-Thus we add the `int` column to the original dataframe `text_df` as an index for the Tweets. We then tokenize the text data with tidy text `unnest_tokens` and create a new dataframe `text_df`.
+Thus we add the `int` column to the original dataframe `text_df` as an index for the tweets. We then tokenize the text data with tidy text `unnest_tokens` and create a new dataframe `text_df`.
 
 ```{r}
 text_df <- tweets_df %>% select("text")
@@ -101,6 +152,32 @@ head(text_df,10)
 
 # Exploratory data analysis
 
+```{r echo = FALSE}
+anti_lst <- as.numeric(
+  grepl("antivax", tweets_df$text))
+pro_lst <-as.numeric(
+  grepl("vaccineswork", tweets_df$text))
+
+tweets_df$Hashtags <- "Neither"
+tweets_df$Hashtags[anti_lst == 1] <- "#antivax"
+tweets_df$Hashtags[pro_lst == 1] <- "#vaccineswork"
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(ggmap)
+
+states <- map_data("state")
+
+ggplot(data = states) + 
+  geom_point(data = tweets_df, aes(x = lng, y = lat,  colour = Hashtags), size = 1) +
+  geom_polygon(aes(x = long, y = lat, group=group), fill = NA, color = "dark grey") +
+  theme_void()
+
+sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100
+```
+
 A common NLP data exploration practice is looking at unigram frequencies.
 *N-grams* are sequences of N items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams. We'll dive deeper into applications of n-grams later (note to self), but we introduce the topic now because it is common to find n-gram frequencies, as we do below with unigrams.
 ```{r}
@@ -137,7 +214,7 @@ text_df %>%
 ```
 
 ##Sentiment
-We want to classify the Tweets by sentiment, or rather by the feelings and emotions portrayed by the user. As humans we can easily tell if someone is angry, sad, satisfied, or even sarcastic. However we have to give the computer some clues on how to do this start with the `sentiments` dataset which is loaded with the `tidytext` library. Similar to the `stop_words` dataset, there are three lexicons:
+We want to classify the tweets by sentiment, or rather by the feelings and emotions portrayed by the user. As humans we can easily tell if someone is angry, sad, satisfied, or even sarcastic. However we have to give the computer some clues on how to do this start with the `sentiments` dataset which is loaded with the `tidytext` library. Similar to the `stop_words` dataset, there are three lexicons:
 
 * `afinn` gives each word an integer score between -5 and 5, from most negative to most positive sentiment.
 
@@ -192,7 +269,7 @@ ggplot(tweet_sentiment_ordered, aes(sentiment_mean)) +
 
 ```
 
-Let's print out some positive Tweets. We can use the index column "int" that we've kept constant to print out the original (sans and Twitter handles) Tweets.
+Let's print out some positive tweets. We can use the index column "int" that we've kept constant to print out the original (sans and Twitter handles) tweets.
 
 ```{r}
 positive <- tweet_sentiment$int[tweet_sentiment$sentiment_mean > 2]
@@ -203,88 +280,97 @@ And let's look at some negative ones as well..
 negative <- tweet_sentiment$int[tweet_sentiment$sentiment_mean < -2 ]
 head(tweets_df$text[negative])
 ```
-Neither the positive nore negative Tweets are unanamously on either side of this "issue, even with this small sample of text. Now we can really see how this won't be easy!
+Neither the positive nore negative tweets are unanamously on either side of this "issue"", even with this small sample of text. Now we can really see how this won't be easy!
 
 We should think about what we can do about the words that won't be found in the `sentiments` dataset, like "#vaccineswork" that might give us even more information about whether or not the tweet is supporting vaccines or not.
 
-Sentiment may be just a small part of clustering Tweets as "pro-vaccination" or "anti-vaccination."
+Sentiment may be just a small part of clustering tweets as "pro-vaccination" or "anti-vaccination."
 
 http://www.public.asu.edu/~huanliu/papers/sbp14.pdf
 
 # Data analysis
-Throughout our data exploration, we realized the problem we are solving is not quite what we started with. This is not a sentiment analysis: this is classifying Tweets as one of two sides of a debate. 
+Throughout our data exploration, we realized the problem we are solving is not quite what we started with. This is not a sentiment analysis: this is classifying tweets as one of two sides of a debate. 
 
-Assuming that, with high probability, users do not change their views--expecially within a 7-day window, we can label Twitter users and represent them as a *social network* to help classify Tweets.
+Assuming that, with high probability, users do not change their views--expecially within a 7-day window, we can label Twitter users and represent them as a *social network* to help classify tweets.
 
-To do this, we will use the power of Retweets and what are called seed users, or prominent figures that clearly have one opion or another. For example, the World Health Organization and CDC are two entities that would put out pro-vaccination Tweets. The data we have also contains reply Tweets, but we cannot count on these to identify similar opinion because users may reply to Tweets they agree with or Tweets they do not agree with. We use Retweets because we can assume that if a user retweets another users Tweets about vaccination, they probably agree with their opinion. This assumption gets stronger as the social network grows more connections.
+To do this, we will use the power of retweets and seed users, or prominent figures that clearly have one opion or another.For example, the World Health Organization and CDC are two entities that would produce pro-vaccination tweets. The data we have also contains reply tweets, but we cannot count on these to identify similar opinion because users may reply to tweets they agree with or tweets they do not agree with. We use Retweets because we can assume that if a user retweets another users tweets about vaccination, they probably agree with their opinion. This assumption gets stronger as the social network grows more connections.
 
 ## Label propagation
+We will build a network using the `igraph` package. This network will have users as nodes or vertices, with an edge between two vertices if the users retweet the same tweet, are following or are friends with the other user, or retweeted a tweet directly from the other user. The weight of the edge will increase if more than one of the previous are true.
+
+
+First let's find the proportion of retweets that are exactly the same as the text they retweeted. This is because we don't want to create an edge between two users if one of them added extra text to the retweet, possibly talking about how they disagree with the tweet.
+
+`t1` and `t2` are vectors with either the `retweet_text` or `text` of all the tweets that are retweets, as in the `retweet_text` column is not `NA`.
 
 ```{r}
-library(stringr)
+tweets_df <- read.csv("data/date01_14_n18k_key2_uuidgens_final.csv",stringsAsFactors = FALSE)
 
-pat <- c("[\r\n]|&amp.|@.*?\\S+|@.*?$|^RT |https?:.\\S+|https?:.*$")
+is_retweet <- is.na(tweets_df$retweet_text) == FALSE
 
-tweets_df$text <- 
-  tweets_df$text %>%
-    str_replace_all(pattern = pat, "")
-
-tweets_df$retweet_text <- 
-  tweets_df$retweet_text %>%
-    str_replace_all(pattern = pat, "")
-
-head(tweets_df$text)
-```
-
-Let's find the percentage of tweets in which the user has a location on their profile 
-```{r}
-sum((tweets_df$location == "")==FALSE)/dim(tweets_df)[1]*100
-```
-Next we find the proportion of retweets that are exactly the same as the text they retweeted. This is because we don't want to create an edge between two users when one of them retweeted something, and then added text to say they disagree with the tweet they retweeted.
-
-```{r}
-t1 <- tweets_df$retweet_text[(is.na(tweets_df$retweet_text) == FALSE)]
-t2 <- tweets_df$text[(is.na(tweets_df$retweet_text) == FALSE)]
+t1 <- tweets_df$retweet_text[is_retweet]
+t2 <- tweets_df$text[is_retweet]
 
 sum((t1==t2) == FALSE)/length(t1)*100
 ```
 Only a small percentage of retweets added text. We can safely leave out this data and still have a large dataset.
 Let's add a column that labels the retweets as identical or not (or na, if the tweet is not a retweet).
 This leaves NAs where `tweets_df$text` is NA.
+
+
 ```{r}
 tweets_df$rt_is_identical <- 
   (tweets_df$retweet_text == tweets_df$text)
 
 head(tweets_df$rt_is_identical)
 ```
-We need to build our network. To do this we will use the library `igraph`. First we should create a data frame where the first two columns are vertices with an edge between them. We will use both users and tweets as vertices, then add attributes if there are multiple connections necessary.
+We need to build our network. To do this we will use the library `igraph`. First we should create a data frame where the first two columns are vertices with an edge between them. add attributes if there are multiple connections necessary.
 
-or we can do this: 
 ```{r}
-network_df <- 
-  tweets_df %>%
-  filter(rt_is_identical != FALSE) %>%
-  select(text, uuidgens_user) %>%
-  group_by(text, uuidgens_user)
-head(network_df)
+tweets_df$tweet_factor <- 
+  as.numeric(factor(tweets_df$text))
+
+l <- list()
+
+for (i in c(1:max(tweets_df$tweet_factor))){
+  users <- unique(c(tweets_df$uuidgens_user[tweets_df$tweet_factor==i],
+                    tweets_df$uuidgens_retweet[tweets_df$tweet_factor==i]))
+  users <- users[is.na(users) == FALSE]
+  l <- append(l, list(users))
+}
+
+#namelst <-  c(paste0("tweet",c(1:max(tweets_df$tweet_factor)) , sep = ""))
+#names(l) <- namelst
 ```
+Now we have each tweet on the list with the associated users. Now let's create an edge between all these users by creating the dataframe that will be converted to a graph object with `igraph`.
+
+```{r eval=FALSE}
+init_test <- data.frame(t(combn(l[[1]],2)))
+
+for (i in c(2:length(l))){
+  if (length(l[[i]]) > 1){
+    combos <- t(combn(l[[i]],2))
+    init <- rbind(init, data.frame(combos))
+  }
+}
+```
+
+
 
 So now we've connect each user to all of its tweets, and each unique tweet to all unique users that retweeted it.
 
+```{r}
+graph_df <- init %>%
+  group_by(X1,X2) %>%
+  tally()
+```
+
+
 Add user to user edges
 ```{r}
-network_df$n <- 0
 
-new_df <- tweets_df %>%
-  filter(rt_is_identical != FALSE) %>%
-  select(uuidgens_user,uuidgens_retweet) %>%
-  na.omit() %>%
-  group_by(uuidgens_user, uuidgens_retweet) %>%
-  tally()
-
-colnames(new_df) <- colnames(network_df)
-network_df <- rbind(network_df, new_df)
 ```
+
 IMPORT FRIENDS
 The column "pro_vax" is a 1 for users who the world health organization follows, and a 0 for users HealthRanger, and anti-vax twitter account, follows. The package rtweet refers to users that a user follows as "friends".
 ```{r, warning=FALSE}
@@ -329,10 +415,11 @@ Run label propagation, Add vertex attriutes and color the largest communities.
 ```{r}
 clp <- cluster_label_prop(g, initial = vtx_df$pro_vax)
 
+
 # create some vertex attributes
 V(g)$community <- clp$membership
 V(g)$betweenness <- betweenness(g, v = V(g), directed = F)
-V(g)$degree <- degree(g, v = V(g))
+#V(g)$degree <- degree(g, v = V(g))
 
 
 data <- toVisNetworkData(g)
@@ -363,6 +450,9 @@ Let's play around with the vertex attributes in a data frame. We can look at the
 ```{r}
 vtxattr_df <- data.frame(vertex_attr(g))
 #head(vtxattr_df)
+vtxattr_df %>% filter(pro_vax == 1) %>% select(community) %>% group_by(community) %>% tally()
+vtxattr_df %>% filter(pro_vax == 2) %>% select(community) %>% group_by(community) %>% tally()
+
 
 pro_communities<- vtxattr_df %>% filter(pro_vax == 1) %>% select(community) %>% group_by(community)# %>% tally()
 anti_communities<- vtxattr_df %>% filter(pro_vax == 2) %>% select(community) %>% group_by(community)# %>% tally()
@@ -384,20 +474,19 @@ for(i in anti_communities){
   col[V(g)$community == i] <- colors[2]
 }
 
-graphjs(g, vertex.color = col,  vertex.size = .3, na.ok = TRUE)
+#graphjs(g, vertex.color = col,  vertex.size = .3, na.ok = TRUE)
 ```
 
 
 # Summary of results
 ```{r}
-100*(1 - sum(col == "grey")/length(col))
-100*sum(col == colors[1])/length(col)
-100*sum(col == colors[2])/length(col)
-colors
+labeled <- 100*(1 - sum(col == "grey")/length(col))
+pro_labeled <- 100*sum(col == colors[1])/length(col)
+anti_labeled <- 100*sum(col == colors[2])/length(col)
 ```
-About 10% of our data is labeled!
-8% is pro vax
-2% is antivax
+About `r labeled` 10% of our data is labeled!
+
+`r pro_labeled` is pro vax while `r anti_labeled` is antivax
 
 ```{r}
 vtxattr_df$colors <- col
