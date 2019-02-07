@@ -16,15 +16,33 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Motivation
 It is important to identify communities who are at higher risk of infectious diseases in order to implement preventative measures. In this document, we will classify Twitter users and their tweets as "pro" or "anti" vaccination. 
+<center>
+![](data/map1.png)
+</center>
+This case study consists of data exploration and visualization using Natural Language Processing techniques, a social network analysis with the `igraph` package, and a sentiment analysis of the results.
 
-This code consists of data exploration and visualization using Natural Language Processing techniques, a social network analysis of users with the `igraph` package, and a sentiment analysis of the results.
+The libraries used in this study are listed in the following table, along with their purpose in this particular case study:
 
-The libraries used in this study are `stringr`, `tidytext`, `dplyr`, `ggplot2`, `wordcloud`, `SnowballC`, `igraph`, `threejs`, and `visNetwork`. In order to run this code please ensure you have these packages installed. If you would like to download your own Twitter data, you will need to sign up for mma Twitter developer account, create an application, and enter your own keys & credintials in the "What is the data?" section below.
+|Library|Purpose|
+|---|---|
+|`stringr`|Parsing text with regular expressions|
+|`tidytext`|Loading important datasets and manipulating text data|
+|`dplyr`|Dataframe manipulation|
+|`ggplot2`|Plotting sentiment|
+|`wordcloud`|Creating wordcloud visuals|
+|`SnowballC`|Word stemming|
+|`igraph`|Performing social network analysis|
+|`threejs`|Graphing large-scale social networks (compatible with `igraph`)|
+|`visNetwork`|Graphing social networks with labels|
 
-The learning objectives include data cleaning and manipulation with natural language processing & regular expressions, social network analysis, semi-supervised learning concepts, and sentiment.
+In order to run this code please ensure you have these packages installed. 
+
+If you would like to download your own Twitter data, you will need to sign up for a Twitter developer account, create an application, and enter your own keys & credintials in the "What is the data?" section below.
+
+The learning objectives include data cleaning and manipulation with natural language processing and regular expressions, social network analysis, semi-supervised learning concepts, and sentiment analysis.
 
 # What is the data?
-To collect data from Twitter, we suggest using the `rtweet` package. Again, if you would like to download your own Twitter data, you will need to sign up for a Twitter developer account, create an application, and enter your own keys below.
+To collect data from Twitter, we suggest using the `rtweet` package. Again, if you would like to download your own Twitter data, you will need to sign up for a Twitter developer account, create an application, and enter your own keys below. We've set the code chunk `eval = false` so that when the entire file is knit the code in the chunk is ignored.
 
 ```{r eval=FALSE}
 library(rtweet)
@@ -36,11 +54,13 @@ twitter_token <- create_token(
   access_token = "XXXXXXXXXXXXXXXXXXXXXXXXXXX",
   access_secret = "XXXXXXXXXXXXXXXXX")
 ```
-Once the twitter_token is create it is stored in the workspace and you are free to use all the functions in `rtweet`!
+Once the `twitter_token` is create it is stored in the workspace and you are free to use all the functions in `rtweet`!
 
 The `search_tweets` function can download 18,000 every 15 minutes (with the free developer account). However adding `retryonratelimit = TRUE` automatically waits for the rate limit to be reset (after 15 min) and then searches for the remaining tweets. This is repeated until all requested tweets are downloaded.
 
-Below, we are searching for 18,000 recent tweets that contain the hashtags "antivax" or "vaccineswork", as well as just the word "vaccines".
+We search for the 18,000 most recent tweets (`type = "recent"`) that contain the hashtags "antivax" or "vaccineswork", as well as just the word "vaccines". `include_rts = TRUE` means we are including retweets. This is important for this case study: we want to be able to connect users to one another if they share the same opinion. We can assume if a user retweets a tweet without adding any text to it (which might state their opposition to the tweet) then they agree with the tweet.
+
+We set `lang = "en"` to capture only tweets in English.
 
 ```{r eval=FALSE}
 st <- search_tweets('#antivax OR vaccines OR #vaccineswork', 
@@ -50,9 +70,12 @@ st <- search_tweets('#antivax OR vaccines OR #vaccineswork',
                     lang = "en")
 ```
 
+After collecting the tweets with the `rtweet` package, we exported the data as a csv file. This is an important step because the data you collect with the API can be very different every time. It also takes a few minutes to download new tweets.
+
+Next, we'll import a set of data that was created with the exact steps as above.
+
 # Data import
-First we import the libraries needed, then upload the data with `read.csv`.
-Make sure you have the libraries below installed before running the code.
+Before doing anything, we should load the libraries needed for the case study.
 ```{r, message = FALSE}
 library(kableExtra)
 library(stringr)
@@ -66,14 +89,35 @@ library(SnowballC)
 library(igraph)
 library(threejs)
 library(visNetwork)
-
-tweets_df <- read.csv("data/date01_14_n18k_key2_uuidgens_final.csv",stringsAsFactors = FALSE)
 ```
+
+Now we upload the data as a dataframe with `read.csv` and look at all the fields/features/columns by printing out the `colnames`. Each row of the dataframe is information about *one tweet*. We also print out the first row with `head(tweets_df,1)` to get an idea of what kind of information is in each row and column.
+```{r}
+tweets_df <- read.csv("data/date01_14_n18k_key2_uuidgens_final.csv",
+                      stringsAsFactors = FALSE)
+colnames(tweets_df)
+head(tweets_df,1)
+```
+In a seperate file, unique IDs were generated for each user so that all identifiers could be removed in order to avoid assuming or exploiting any political or religious views and/or the state of someone's health.
+
+We describe a few of the important columns in the following table:
+
+For each row $i$,
+
+|Column|Description|
+|--|---|
+|`text`|Raw text from tweet $i$|
+|`uuidgens_user`|Unique ID of the user who tweeted (or retweeted) tweet $i$|
+|`uuidgens_retweet`|Unique ID of the user that tweet $i$ was *retweeted from*|
+|`created_at`|Date and time tweet $i$ was tweeted|
+|`display_text_width`|Number of characters in tweet $i$|
+|`location`|Location the tweeting user has listed in their Twitter bio|
+|`description`|Description the tweeting user has listed in their Twitter bio|
 
 
 # Data wrangling
 ## Cleaning with regular expressions
-Using regular expressions to parse and clean text is an important skill when dealing with text data. Let's take a look at the data to see what we need to clean.
+Using regular expressions to parse and clean text is an important skill when dealing with text data. Let's take a look at the data to see what we need to clean by printing the head, or first 6 lines, of the `text` column - the raw text from the tweets we downloaded.
 
 ```{r}
 head(tweets_df$text)
@@ -81,7 +125,7 @@ head(tweets_df$text)
 
 We want to remove text that does not aid our analysis and may in fact distract from our analysis. For example, we observe lots of links that begin with "https..." that aren't giving us any insightful information.
 
-The string `pat` below contains several regular expression or "regex" patterns that match with a few different unwanted characters or phrases. The "|" character seperates each expression, and when `str_replace_all` is called it checks for matches with every pattern in `pat`. `str_replace_all` also looks for repeats of any pattern, so if there are multiple links it will replace all of them with an empty space, `""`.
+The string `pat` below contains several regular expression or "regex" patterns that match with a few different unwanted characters or phrases.
 
 |Regex Phrase|Text match|
 |---|---|
@@ -92,6 +136,9 @@ The string `pat` below contains several regular expression or "regex" patterns t
 |`https?:.*\\S+`|Embedded link followed by whitespace|
 |`https?:.*$`|Embedded link at the end of the tweet|
 
+Looking at the code chunk below, we note that the "|" character seperates each pattern in `pat`. When `str_replace_all` is called, it checks for matches with *every seperate pattern* in `pat` and looks for repeats of any pattern. Each match with one of the patterns is replaced with an empty string, `""`.
+
+We replace the `tweets_df` columns `text` and `retweet_text` with the cleaned versions of the columns, and then print the head of the `text` collumn to view our changes.
 
 ```{r}
 pat <- "[\r\n]|&amp.|@.*?\\S+|@.*?$|https?:.*\\S+|https?:.*$"
@@ -109,38 +156,54 @@ head(tweets_df$text)
 
 ## The tidy text and NLP
 
-The tidy text format is using **one-token-per-row** in our dataframe. In short, tokens in natural language processing are words. To be technical, you could say a token is a list of characters between two spaces. Tokenization is the process of breaking up a string, or paragraph or document into word bits.
+The tidy text format is using **one-token-per-row** in our dataframe. In short, tokens in natural language processing are words. To be technical, you could say a token is a list of characters between two spaces. Tokenization is the process of breaking up a string or paragraph or document into tokens.
 
-So we want to tokenize our tweets, however we don't want to lose any information. Specifically, we want to keep track of what Tweet each word came from since our analysis involves differentiating tweets. Other analyses including topic summarization may not require keeping track of this--you can just a create a jumble (er, "corpus") of words and find commonalities.
+We want to tokenize our tweets, however we don't want to lose any information. Specifically, we want to keep track of what Tweet each word came from since our analysis involves differentiating tweets. Other analyses including topic summarization may not require keeping track of this--you can just a create a jumble (i.e. "corpus") of words and find commonalities.
 
-Thus we add the `int` column to the original dataframe `text_df` as an index for the tweets. We then tokenize the text data with tidy text `unnest_tokens` and create a new dataframe `text_df`.
+We create the dataframe `text_df` with one column of the twitter `text` and add the `int` column as an index for the tweets. We then tokenize the text data with tidytext's `unnest_tokens` by using the `text` column as the input and `word` as the name of the output column. We replace `text_df` with this newly formatted dataframe.
 
 ```{r}
-text_df <- tweets_df %>% select("text")
+text_df <- tweets_df %>% 
+  select(text)
 text_df$int <- c(1:length(text_df$text))
+
 text_df <- text_df %>%
     unnest_tokens(word, text)
+
 head(text_df)
 ```
 
-Next we want to remove stop words from the text. Stop words in NLP are common words that don't add value to a sentence, paragraph, document etc. For example, "still think the flu shot is" doesn't give us any extra information than "still think flu shot," so we can remove these words to make our dataset more concise.
+Now that we have our data in a useful format, we want to remove stop words from the text. *Stop words* in NLP are common words that don't add value to a sentence, paragraph, document etc. For example, "still think the flu shot is..." doesn't give us any extra information than "still think flu shot," so we can remove these words to make our dataset more concise.
 
-We load the `stop_words` dataset, which has two columns: `word` and `lexicon`. There are three different lexicons that reference the *source* of the stop word: ["onix"](http://www.lextek.com/manuals/onix/stopwords1.html), ["SMART"](http://www.jmlr.org/papers/volume5/lewis04a/lewis04a.pdf), and ["snowball."](http://snowball.tartarus.org/algorithms/english/stop.txt) We count the number of stop words in each category so that we can modify this if needed. (For example, if by removing all possible stop words we aren't left with enough information, we could instead just remove the 174 `snowball` stopwords).
+To do this, simply load the `stop_words` dataset, which has two columns: `word` and `lexicon`. There are three different lexicons that reference the *source* of the stop word:
 
+- ["onix"](http://www.lextek.com/manuals/onix/stopwords1.html)
+
+- ["SMART"](http://www.jmlr.org/papers/volume5/lewis04a/lewis04a.pdf)
+
+- ["snowball."](http://snowball.tartarus.org/algorithms/english/stop.txt)
+
+The difference between the lexicons is they include different words. Some include more than others, thus if we use these we remove more words and from our data. To quickly see these differences, we can count the number of stop words in each category using `dplyr`'s `group_by`.
 ```{r}
 data(stop_words)
+head(stop_words)
 
 stop_words %>% 
     group_by(lexicon) %>% 
     tally()
+```
 
+Since we have no prior reason to chose a specific lexicon, let's remove all of the stop words in the `stopwords` dataset from our data using the `anti_join` function. We can always modify this later on.
+```{r}
 text_df <- text_df %>%
   anti_join(stop_words)
 
 head(text_df,10)
 ```
-##Word stemming
-Another technique often used alongside removing stopwords is token *stemming*. Stemming changes each word to a root word so that different conjugations of the same word are not treated as different words completely. A human can tell that "vaccinate" and "vaccination" have similar meaning.On the computer, if we were to count every repetition of "vaccinate" we would not get an accurate total since "vaccination" would be ignored.
+
+
+## Stemming
+Another technique often used alongside removing stopwords is word *stemming*. Stemming changes each word to a root word so that different conjugations of the same word are not treated as different words completely. A human can tell that "vaccine", vaccinate" and "vaccination" have similar meaning. However if we were to count every repetition of "vaccine" in R we would not get an accurate total since "vaccination" would be ignored, for example. Instead, we change each of those words to "vaccin" with a stemming algorithm.
 
 We will use the library `SnowballC` which implements the [Porter stemming algorithm](http://snowball.tartarus.org/algorithms/porter/stemmer.html).
 
@@ -164,7 +227,7 @@ tweets_df$Hashtags[pro_lst == 1] <- "#vaccineswork"
 ```
 
 
-```{r, message=FALSE, warning=FALSE}
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
 library(ggplot2)
 library(ggmap)
 
@@ -179,11 +242,15 @@ sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100
 ```
 
 A common NLP data exploration practice is looking at unigram frequencies.
-*N-grams* are sequences of N items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams. We'll dive deeper into applications of n-grams later (note to self), but we introduce the topic now because it is common to find n-gram frequencies, as we do below with unigrams.
+*N-grams* are sequences of N items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams.
+
+We find the top 10 most common words or unigrams to see common topics in our data. Recall that we have already removed stopwords and unnecessary items such as web links, and we have stemmed the remaining words.
+
 ```{r}
-head(text_df %>% dplyr::count(word, sort = TRUE),10)
+head(text_df %>%
+       count(word, sort = TRUE),10)
 ```
-We can graph the unigram frequencies with ggplot for a nice visualization of our text data.
+We can graph the unigram frequencies with ggplot for a nice visualization of our text data. We pick a number of appearances to filter close to the total tweets we have (18,000) to plot only the top few words.
 ```{r}
 text_df %>%
   count(word, sort = TRUE) %>%
@@ -195,25 +262,41 @@ text_df %>%
   ylab(NULL) +
   coord_flip()
 ```
-Similarly, we can look at common *bigrams*, which are two words in a row.
+
+Next, we can look at common *bigrams*, which are two words in a row. The tidytext function `unnest_tokens` is an effient way to find bigrams by setting `token = "ngrams"` and `n = 2`. The output column is named "bigram".
+
+To get the most frequent bigrams we can simply use the `dplyr` library's `count` function again.
 ```{r}
 bigrams <- text_df %>%
   unnest_tokens(bigram, word, token = "ngrams", n = 2)
+
+head(bigrams)
 
 head(bigrams %>%
   count(bigram, sort = TRUE),10)
 ```
 
 
-For another fun exploration graphic, try word clouds!
+For another fun exploration graphic, try word clouds
 ```{r}
+library(wordcloud2)
 text_df %>%
-  anti_join(stop_words) %>%
   count(word) %>%
   with(wordcloud(word, n, max.words = 100))
+test<- text_df %>%
+  count(word) %>%
+  arrange(desc(n))
+
+#test <- head(test,100)
+#test$n <- "freq"
+#rownames(test) <- test$word
+#library(wordcloud2)
+#wordcloud2(test, figPath = "twitter.jpg")
+#figPath = system.file("examples/t.png",package = "wordcloud2")
+#wordcloud2(test, figPath = figPath, color = "skyblue")
 ```
 
-##Sentiment
+## Sentiment
 We want to classify the tweets by sentiment, or rather by the feelings and emotions portrayed by the user. As humans we can easily tell if someone is angry, sad, satisfied, or even sarcastic. However we have to give the computer some clues on how to do this start with the `sentiments` dataset which is loaded with the `tidytext` library. Similar to the `stop_words` dataset, there are three lexicons:
 
 * `afinn` gives each word an integer score between -5 and 5, from most negative to most positive sentiment.
@@ -326,7 +409,7 @@ head(tweets_df$rt_is_identical)
 ```
 We need to build our network. To do this we will use the library `igraph`. First we should create a data frame where the first two columns are vertices with an edge between them. add attributes if there are multiple connections necessary.
 
-```{r}
+```{r eval=FALSE}
 tweets_df$tweet_factor <- 
   as.numeric(factor(tweets_df$text))
 
@@ -359,7 +442,7 @@ for (i in c(2:length(l))){
 
 So now we've connect each user to all of its tweets, and each unique tweet to all unique users that retweeted it.
 
-```{r}
+```{r eval=FALSE}
 graph_df <- init %>%
   group_by(X1,X2) %>%
   tally()
@@ -367,20 +450,18 @@ graph_df <- init %>%
 
 
 Add user to user edges
-```{r}
 
-```
 
 IMPORT FRIENDS
 The column "pro_vax" is a 1 for users who the world health organization follows, and a 0 for users HealthRanger, and anti-vax twitter account, follows. The package rtweet refers to users that a user follows as "friends".
-```{r, warning=FALSE}
+```{r, warning=FALSE, eval=FALSE}
 seeds_df <- read.csv("data/seeds_WHO_HR_friends.csv",stringsAsFactors = FALSE)
 head(seeds_df)
 seed_users <- seeds_df[(dim(seeds_df)[1] - 1) : dim(seeds_df)[1],]
 friends_df <- seeds_df[1:(dim(seeds_df)[1] - 2),]
 ```
 Create `vtx_df` so we can keep track of the order of vertices. Then we can add vertex attributes and the seed users.
-```{r, message=FALSE, warning= FALSE}
+```{r, message=FALSE, warning= FALSE, eval=FALSE}
 
 vtx_df <- data.frame("unique_vtcs" = unique(c(network_df$text, network_df$uuidgens_user)))
 vtx_df <- merge(vtx_df, seeds_df, by.x = "unique_vtcs", by.y = "uuidgens_user", all = TRUE)
@@ -395,7 +476,7 @@ vtx_df$pro_vax[is.na(vtx_df$pro_vax) == TRUE] <- randn
 lpc <- cluster_label_prop(g, initial = vtx_df$pro_vax)
 ```
 Get a random sample and label anti-vax and pro-vax seed users.
-```{r, eval=FALSE}
+```{r eval=FALSE}
 network_df_sample <- network_df[sample(nrow(network_df), 2000), ]
 
 vtx_df <- data.frame("unique_vtcs" = unique(c(network_df_sample$text, network_df_sample$uuidgens_user)))
@@ -412,7 +493,7 @@ vtx_df$pro_vax[is.na(vtx_df$pro_vax) == TRUE] <- randn
 ```
 
 Run label propagation, Add vertex attriutes and color the largest communities.
-```{r}
+```{r eval=FALSE}
 clp <- cluster_label_prop(g, initial = vtx_df$pro_vax)
 
 
@@ -447,7 +528,7 @@ for(j in c(1:2)){
 ```
 
 Let's play around with the vertex attributes in a data frame. We can look at the pro-vax and anti-vax labels and see what communities they ended up in. Then let's color those communities.
-```{r}
+```{r eval=FALSE}
 vtxattr_df <- data.frame(vertex_attr(g))
 #head(vtxattr_df)
 vtxattr_df %>% filter(pro_vax == 1) %>% select(community) %>% group_by(community) %>% tally()
@@ -460,7 +541,8 @@ anti_communities<- vtxattr_df %>% filter(pro_vax == 2) %>% select(community) %>%
 vtxattr_df %>% filter(community == 47) %>% tally()
 vtxattr_df %>% filter(community == 46) %>% tally()
 ```
-```{r}
+
+```{r eval = FALSE}
 library(RColorBrewer)
 
 col <- rep("grey", length(V(g)))
@@ -479,16 +561,16 @@ for(i in anti_communities){
 
 
 # Summary of results
-```{r}
+```{r eval=FALSE}
 labeled <- 100*(1 - sum(col == "grey")/length(col))
 pro_labeled <- 100*sum(col == colors[1])/length(col)
 anti_labeled <- 100*sum(col == colors[2])/length(col)
 ```
-About `r labeled` 10% of our data is labeled!
+About r labeled 10% of our data is labeled!
 
-`r pro_labeled` is pro vax while `r anti_labeled` is antivax
+r pro_labeled is pro vax while r anti_labeled is antivax
 
-```{r}
+```{r eval=FALSE}
 vtxattr_df$colors <- col
 new_provax <- vtxattr_df %>% filter(is.na(pro_vax)) %>% filter(colors == col[2]) %>% select(name)
 new_provax[sample(nrow(new_provax), 10), ]
