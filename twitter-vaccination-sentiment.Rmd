@@ -1,13 +1,15 @@
 ---
-title: Twitter Vaccination Sentiment Analysis
+title: "Twitter Vaccination Sentiment Analysis"
 author: "Alexandra Stephens"
-output: 
-    html_document:
-        theme: cosmo 
-        toc: true
-        toc_float: true
-        highlight: tango
-        number_sections: false
+output:
+  html_document:
+    highlight: tango
+    number_sections: no
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
 ---
 
 ```{r setup, include=FALSE, warnings=FALSE}
@@ -152,7 +154,7 @@ From this small peak at the data, we can already see that there are a lot of str
 To do this, first we create a string named `pat` (short for *pattern*) that contains *regular expression* or "regex" patterns that match with various unwanted characters or phrases.
 
 ```{r}
-pat <- "[\r\n]|&amp.|@.*?[ \t\r\n]|@.*?$|https:.*[ \t\r\n]|https:.*$|[^[:alnum:][ \t\r\n]?&/\\-#.']"
+pat <- "[\r\n]|&amp.|@.*?[ \t\r\n]|@.*?$|https:.*[ \t\r\n]|https:.*$|[^[:alpha:][ \t\r\n]?&/\\-#.']"
 ```
 
 Note that the "|" character separates each pattern the string. For example, the first pattern `[\r\n]` matches with newline characters, and is followed by a "|" to signify the end of that regular expression.
@@ -265,41 +267,44 @@ uncomm_words
 
 text_df_stemmed_common <- text_df_stemmed %>%
   anti_join(uncomm_words)
+
 nrow(text_df_stemmed)
 nrow(text_df_stemmed_common)
 ```
 
 # Exploratory data analysis
 
-
+## Map visual
+For a fun visual, we can visualize our tweets on a map. First let's find which tweets use the word or hashtag "antivax" and which tweets say "vaccines work." Next we add the column `Hashtags` that contains labels for if the tweet contains these words or contains neither.
 ```{r}
 anti_lst <- as.numeric(
   grepl("antivax", tweets_df$text))
 pro_lst <-as.numeric(
-  grepl("provax", tweets_df$text))
+  grepl("vaccines work", tweets_df$text))
 
-tweets_df$Hashtags <- "Neither"
+head(anti_lst)
+
+tweets_df$Hashtags <- "none"
 tweets_df$Hashtags[anti_lst == 1] <- "#antivax"
-tweets_df$Hashtags[pro_lst == 1] <- "#vaccineswork"
+tweets_df$Hashtags[pro_lst == 1] <- "vaccines work"
 ```
-
-
-```{r, message=FALSE, warning=FALSE}
-library(ggplot2)
-library(ggmap)
-
+Next we use `ggplot2` and `ggmap` to plot this on a map.
+```{r}
 states <- map_data("state")
 
 ggplot(data = states) + 
   geom_point(data = tweets_df, aes(x = lng, y = lat,  colour = Hashtags), size = 1) +
   geom_polygon(aes(x = long, y = lat, group=group), fill = NA, color = "dark grey") +
   theme_void()
-
-sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100
 ```
 
-A common NLP data exploration practice is looking at unigram frequencies.
-*N-grams* are sequences of N items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams.
+As we can there was sum missing data. This is expected since most people probably don't have their location turned on on twitter. We calculate exactly what percentage of tweets do not have an associated latitude and longitude below.
+```{r}
+sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100
+```
+## N-grams
+A common NLP data exploration practice is looking at n-gram frequencies.
+*N-grams* are sequences of *n* items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams, meaning one word, two word, and three word combinations.
 
 We find the top 10 most common words or unigrams to see common topics in our data. Recall that we have already removed stopwords and unnecessary items such as web links, and we have stemmed the remaining words.
 
@@ -332,15 +337,10 @@ head(bigrams_stemmed %>%
   dplyr::count(bigram, sort = TRUE),10)
 ```
 
-
-For another fun exploration graphic, try word clouds
+Last in this section, a fun exploration graphic of unigrams is a "word cloud." We can create this data visualization easily with the `wordcloud2 `.
 ```{r}
-text_df_stemmed %>%
-  dplyr::count(word) %>%
+unigram_count %>%
   with(wordcloud(word, n, max.words = 100))
-test<- text_df %>%
-  dplyr::count(word) %>%
-  arrange(desc(n))
 ```
 
 ## Sentiment
@@ -418,6 +418,7 @@ Sentiment may be just a small part of clustering tweets as "pro-vaccination" or 
 
 http://www.public.asu.edu/~huanliu/papers/sbp14.pdf
 
+# Data analysis
 
 ## Topic Modeling
 Since our data is unsupervised, meaning we don't have any prior knowledge or labels to tell us if a tweet is pro or anti vaccine, we want to use topic modeling to seperate the tweets into the two sides using only the text. 
@@ -580,61 +581,20 @@ kable(diff_tweets) %>%
 ```
 
 
-```{r eval= FALSE}
-ap_top_terms <- ap_topics %>%
-  group_by(topic) %>%
-  top_n(20, beta) %>%
-  ungroup() %>%
-  arrange(topic, -beta)
+## Social network analysis
 
-ap_top_terms %>%
-  mutate(term = reorder(term, beta)) %>%
-  ggplot(aes(term, beta, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()
-```
+Assuming that, with high probability, users do not change their views (especially within a 7-day window) we can label Twitter users and represent them as a *social network* to help classify tweets.
 
+To do this, we will use the power of retweets. We use Retweets because we can assume that if a user retweets another users tweets about vaccination, they probably agree with their opinion. This assumption gets stronger as the social network grows more connections.
 
-# Data analysis
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Throughout our data exploration, we realized the problem we are solving is not quite what we started with. This is not a sentiment analysis: this is classifying tweets as one of two sides of a debate. 
-
-Assuming that, with high probability, users do not change their views--especially within a 7-day window, we can label Twitter users and represent them as a *social network* to help classify tweets.
-
-To do this, we will use the power of retweets and seed users, or prominent figures that clearly have one opinion or another.For example, the World Health Organization and CDC are two entities that would produce pro-vaccination tweets. The data we have also contains reply tweets, but we cannot count on these to identify similar opinion because users may reply to tweets they agree with or tweets they do not agree with. We use Retweets because we can assume that if a user retweets another users tweets about vaccination, they probably agree with their opinion. This assumption gets stronger as the social network grows more connections.
-
-## Label propagation
 We will build a network using the `igraph` package. This network will have users as nodes or vertices, with an edge between two vertices if the users retweet the same tweet, are following or are friends with the other user, or retweeted a tweet directly from the other user. The weight of the edge will increase if more than one of the previous are true.
 
 First, we should create a data frame where the first two columns are vertices with an edge between them. 
 
 add attributes if there are multiple connections necessary.
 
-```{r eval = FALSE}
-#tweets_df <- tweets_df[sample(nrow(tweets_df), 5000), ]
+```{r}
+
 tweets_df <- tweets_df %>% 
   mutate(tweet_factor = 
            as.numeric(factor(text)) )
@@ -650,11 +610,11 @@ for (i in c(1:max(tweets_df$tweet_factor))){
 
 ```
 Now we have each tweet on the list with the associated users. Now let's create an edge between all these users by creating the dataframe that will be converted to a graph object with `igraph`.
-```{r eval = FALSE}
-graph_df <- matrix(ncol=2, nrow=2000000)
+```{r}
+graph_df <- matrix(ncol=2, nrow=400000)
 index = 1
 
-for (i in c(1:length(l))){  #length(l)
+for (i in c(1:length(l))){
   if (length(l[[i]]) > 1){
     combos <- t(combn(l[[i]],2))
     graph_df[c(index:(index + length(combos[,1])-1)),] <- combos
@@ -667,15 +627,16 @@ graph_df <- as.data.frame(graph_df)
 ```
 
 Let's delete the extra room
-```{r eval = FALSE}
+```{r}
 graph_df<-graph_df[is.na(graph_df$V1) == FALSE,]
 dim(graph_df)
+head(graph_df)
 ```
 
 So now we've connect each user to all of its tweets, and each unique tweet to all unique users that retweeted it.
-```{r eval = FALSE}
-graph_df$V1 <-  as.character(graph_df$V1)
-graph_df$V2 <-  as.character(graph_df$V2)
+```{r}
+graph_df$V1 <-as.character(graph_df$V1)
+graph_df$V2 <-as.character(graph_df$V2)
 
 graph_df <- graph_df %>%
   group_by(V1,V2) %>%
@@ -683,41 +644,23 @@ graph_df <- graph_df %>%
 
 dim(graph_df)
 
-df1 <- data.frame(t(apply(graph_df[1:2], 1, sort)), graph_df[3])
-graph_df <- aggregate(n~., df1, FUN=sum)
-
-#dim(graph_df)
-#head(graph_df)
+#df1 <- data.frame(t(apply(graph_df[1:2], 1, sort)), graph_df[3])
+#df1 <- aggregate(n~., df1, FUN=sum)
 ```
 
 
-Next we add a *vertex attribute* because we have inferred the label of a few users are friends with the seed users.
-
-We import the dataframe with seed user friends as `seeds_df`. The column `pro_vax` = 1 if the user is followed by the World Health Organization and 0 if the user is followed by HealthRanger.
-
-```{r eval = FALSE}
-
+```{r}
 vtx_df <- data.frame("unique_vtcs" = unique(c(graph_df$V1, graph_df$V2)))
-
-seeds_df <- read.csv("data/seeds_WHO_HR_friends.csv", stringsAsFactors = FALSE)
-
-vtx_df <- merge(vtx_df, seeds_df, by.x = "unique_vtcs", by.y = "uuidgens_user", all.x = TRUE, all.y = FALSE)
-vtx_df$pro_vax[vtx_df$pro_vax == 0] <- 2 # label anti vax users with a 2 instead of 0
-
 head(vtx_df)
 ```
 Set remaining vertices to -1 so they are ignored (initialized vertices)
-```{r eval = FALSE}
-vtx_df$pro_vax[is.na(vtx_df$pro_vax)] <- -1
-vtx_df$fix <- with(vtx_df, pro_vax > 0)
-#vtx_df %>% filter(pro_vax == 2) %>% filter(fix == FALSE)
-
+```{r}
 g <- graph_from_data_frame(d = graph_df, directed = FALSE, vertices = vtx_df)
 edge_width <- (E(g)$n)**2
 ```
 
 Run label propagation, Add vertex attributes and color the largest communities.
-```{r eval = FALSE}
+```{r}
 clp <- cluster_label_prop(g, weights = edge_width)#, fixed = vtx_df$fix)
 
 # create some vertex attributes
@@ -727,8 +670,8 @@ head(E(g)$n)
 #V(g)$betweenness <- betweenness(g, v = V(g), directed = F)
 #V(g)$degree <- degree(g, v = V(g))
 ```
-Data visualization
-```{r eval = FALSE}
+Data visualization: color the largest communities.
+```{r}
 data <- toVisNetworkData(g)
 nodes <- data[[1]]
 edges <- data[[2]]
@@ -753,68 +696,12 @@ for(j in c(1:2)){
 }
 ```
 
-Now let's great the graph
-```{r eval = FALSE}
+Now that we have created all the labels we can display the graph with `graphjs`.
+```{r}
 graphjs(g, vertex.color = col,  vertex.size = .3,  edge.width = edge_width, na.ok = TRUE)
 ```
 
-
-
-
-Let's play around with the vertex attributes in a data frame. We can look at the pro-vax and anti-vax labels and see what communities they ended up in. Then let's color those communities.
-```{r eval=FALSE}
-vtxattr_df <- data.frame(vertex_attr(g))
-#head(vtxattr_df)
-vtxattr_df %>% filter(pro_vax == 1) %>% select(community) %>% group_by(community) %>% tally()
-vtxattr_df %>% filter(pro_vax == 2) %>% select(community) %>% group_by(community) %>% tally()
-
-pro_communities<- vtxattr_df %>% filter(pro_vax == 1) %>% select(community) %>% group_by(community)# %>% tally()
-anti_communities<- vtxattr_df %>% filter(pro_vax == 2) %>% select(community) %>% group_by(community)# %>% tally()
-
-#vtxattr_df %>% filter(community == 104) %>% tally()
-#vtxattr_df %>% filter(community == 1194) %>% tally()
-
-```
-
-```{r eval = FALSE}
-cfg <- cluster_fast_greedy(g)
-V(g)$cfgcommunity <- cfg$membership
-```
-
-
-```{r eval = FALSE}
-library(RColorBrewer)
-
-col <- rep("grey", length(V(g)))
-colors<- brewer.pal(10, "Paired")
-
-for(i in pro_communities){
-  col[V(g)$community == i] <- colors[1]
-}
-
-for(i in anti_communities){
-  col[V(g)$community == i] <- colors[2]
-}
-
-#graphjs(g, vertex.color = col,  vertex.size = .3, na.ok = TRUE)
-```
-
-
 # Summary of results
-```{r eval=FALSE}
-(labeled <- 100*(1 - sum(col == "grey")/length(col)))
-(pro_labeled <- 100*sum(col == colors[1])/length(col))
-(anti_labeled <- 100*sum(col == colors[2])/length(col))
-```
-About r labeled 10% of our data is labeled!
-
-r pro_labeled is pro vax while r anti_labeled is antivax
-
-```{r eval=FALSE}
-vtxattr_df$colors <- col
-new_provax <- vtxattr_df %>% filter(is.na(pro_vax)) %>% filter(colors == col[2]) %>% select(name)
-new_provax[sample(nrow(new_provax), 10), ]
-```
-
+Here I will compare the results from the topic modeling to the social network approach. We will see if the same tweets were clustered into the same communities. We will map the results to see if there is a geographical trend.
 
 
