@@ -235,9 +235,9 @@ Next, we tokenize the text data with tidytext's `unnest_tokens` by using the `te
 text_df <- text_df %>%
   unnest_tokens(word, text)
 
-head(text_df)
+head(text_df,10)
 ```
-Now that we have our data in a "tidy" format, we want to remove stop words from the text. *Stop words* in NLP are common words that don't add value to a sentence, paragraph, document etc. For example, "still think the flu shot is..." doesn't give us any extra information than "still think flu shot," so we can remove these words to make our dataset more concise.
+Now that we have our data in a "tidy" format, we want to remove stop words from the text. *Stop words* in NLP are common words that don't add value to a sentence, paragraph, document etc. For example, "still think the flu shot is..." doesn't give us any extra information than "still think flu shot," so we can remove "the" and "is" to make our dataset more concise.
 
 You can find lists of stopwords in the `stop_words` dataset, which has two columns: `word` and `lexicon`. There are three different lexicons that reference the *source* of the stop word:
 
@@ -256,37 +256,55 @@ stop_words %>%
     group_by(lexicon) %>% 
     tally()
 ```
-
-Since we have no prior reason to chose a specific lexicon, let's remove all of the stop words in the `stopwords` dataset from our data using the `anti_join` function. We can always modify this later on.
+At this point in the analysis, we have no prior reason to chose a specific lexicon, so let's remove all of the stop words in the `stopwords` dataset from our data using the `anti_join` function. This will remove any word found in any of the three lexicons. We can always modify this later on.
 ```{r}
 text_df <- text_df %>%
-  anti_join(stop_words %>% filter(lexicon == "snowball"))
+  anti_join(stop_words)
 
 head(text_df,10)
 ```
-## Stemming
-Another technique often used alongside removing stopwords is word *stemming*. Stemming changes each word to a root word so that different conjugations of the same word are not treated as different words completely. A human can tell that "vaccine", vaccinate" and "vaccination" have close to the same meaning. However, for example, if we were to count every repetition of "vaccine" in R we would not get an accurate total since "vaccination" would be ignored. Instead, we change each of those words to "vaccin" with a stemming algorithm.
+If you compare this dataframe to `text_df` before the anti-join, you notice that the words "no", "to", "be", and "need" have been removed.
 
-We will use the library `SnowballC` which implements the [Porter stemming algorithm](http://snowball.tartarus.org/algorithms/porter/stemmer.html).
+If we wanted to select a specific lexicon, such as the smallest set of stopwords "snowball", we would use `dplyr::filter` command as shown below.
+```{r eval = FALSE}
+text_df <- text_df %>%
+  anti_join(stop_words %>% filter(lexicon == "snowball"))
+```
+
+## Stemming
+Another technique often used alongside removing stopwords is word *stemming*. Stemming changes each word to a root word so that different conjugations of the same word are not treated as different words completely. A human can tell that "vaccine", vaccinate" and "vaccination" have close to the same meaning. However, for example, if we were to count every repetition of "vaccine" in R we would not get an accurate total since "vaccination" would be ignored. Instead, we apply a stemming algorithm which changes each of those words to "vaccin."
+
+We will use the library `SnowballC` which implements the [Porter stemming algorithm](http://snowball.tartarus.org/algorithms/porter/stemmer.html). The command `SnowballC::wordStem` returns the stem of each word in a given vector.
 
 ```{r}
 text_df_stemmed <- text_df %>%
   mutate(word = wordStem(word))
 head(text_df_stemmed,10)
 ```
-Since we've filtered and removed the most common english words, let us also remove the most *uncommon* words in our dataset. This helps reduce the size of our data and remove meaningless words.
-```{r}
-temp <- text_df_stemmed %>%dplyr::count(word)
-head(temp)
-uncomm_words <- temp %>% filter(n == 1) %>% select(word)
-uncomm_words
+Since we've filtered and removed the most common english words--the stop words--let us also remove the most *uncommon* words in our dataset. This helps reduce the size of our data and remove meaningless words to this analysis, such as uncommon pronouns.
 
+First, we create a temporay dataframe `temp` where each row contains a unique word from our data followed by the number of times this word is repeated in the dataset.
+```{r}
+temp <- text_df_stemmed %>%
+  dplyr::count(word)
+head(temp)
+```
+Next we create a dataframe with the most uncommon words. We can start with words repeated only once.
+```{r}
+uncomm_words <- temp %>% 
+  filter(n == 1) %>% 
+  select(word)
+uncomm_words
+```
+Now that we have a dataframe of uncommon words, we use the `dplyr::anti_join` function again to remove these words from the dataframe.
+```{r}
 text_df_stemmed_common <- text_df_stemmed %>%
   anti_join(uncomm_words)
 
 nrow(text_df_stemmed)
 nrow(text_df_stemmed_common)
 ```
+We have removed `r nrow(text_df_stemmed) - nrow(text_df_stemmed_common)` words.
 
 # Exploratory data analysis
 
@@ -301,7 +319,7 @@ pro_lst <-as.numeric(
 head(anti_lst)
 
 tweets_df$Hashtags <- "none"
-tweets_df$Hashtags[anti_lst == 1] <- "#antivax"
+tweets_df$Hashtags[anti_lst == 1] <- "antivax"
 tweets_df$Hashtags[pro_lst == 1] <- "vaccines work"
 ```
 Next we use `ggplot2` and `ggmap` to plot this on a map.
@@ -314,10 +332,79 @@ ggplot(data = states) +
   theme_void()
 ```
 
-As we can there was sum missing data. This is expected since most people probably don't have their location turned on on twitter. We calculate exactly what percentage of tweets do not have an associated latitude and longitude below.
+As we can there is some missing latitute and longitude data. This is expected, since we assume most users do not have their location turned on on  twitter. We calculate exactly what percentage of tweets do not have an associated latitude and longitude below.
 ```{r}
-sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100
+(have_lat = sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100)
 ```
+We see that only `r have_lat` percent of tweets in this dataset have latitude and longitude coordinates.
+```{r}
+(have_hashtag = sum(tweets_df$Hashtags !="none")/dim(tweets_df)[1]*100)
+```
+Additionally, only `r have_hashtag` percent of tweets contain the phrases "antivax" or "vaccines work," so there is not much data on our map.
+
+One solution to mitigate this lack-of-data issue is to use the `location` column. As described in the "Data import" section, this column contains the location a user lists in their Twitter bio. For example, users who live in Baltimore might write "Baltimore, MD." Others are more creative and don't put a real location, while others might write something more general such as "Maryland, USA." Let's print out some of the locations to observe.
+```{r}
+head(tweets_df$location,15)
+```
+We see that the format of most of the locations is a little different, however there are a few with the form, "City, State Abbrv." Using the package `localgeo`, let's convert one of the location entries to latitude and longitude coordinates.
+
+The function `localgeo::geocode` takes two strings as input: a city, starting with a capital letter, and a state abbreviation in all capital letters.
+`devtools::install_github("hrbrmstr/localgeo")`
+```{r}
+library(localgeo)
+geocode("Baltimore","MD")
+geocode("baltimore","MD")
+geocode("Baltimore","Maryland")
+geocode("Baltimore","md")
+```
+Now we can see that we must put our data in the exact format needed for the package. We select the fourth row value, "Bothell, WA" to use as a test. We first split the entry "Bothell, WA" into two strings using `strsplit`. Then we remove the unwanted extra space, " ", with `str_replace_all`.
+```{r}
+(loc <- unlist(strsplit(tweets_df$location[4], "[,]")))
+(loc2 <- str_replace_all(loc, pattern = " ", ""))
+geocode(loc2[1],loc2[2])
+```
+To make this apply more generally, let's remove all spaces after commas before we split the strings.
+```{r}
+no_space <- str_replace_all(tweets_df$location, pattern = ", ", ",")
+test_loc <- strsplit(no_space, "[,]")
+test_loc[1:4]
+```
+Next we use `sapply` to get all the element in the first column of each list. For the function in sapply, we select the whole column with the operator `'['`. Next, we specify which column we would like to select. In this case we are going use the first column as the city and the second column as the state abbreviation.
+```{r}
+cities <- sapply(test_loc,'[',1)
+state_abbvs<- sapply(test_loc,'[',2)
+
+lat_fromloc <- geocode(city=cities,state=state_abbvs)
+head(lat_fromloc)
+nrow(lat_fromloc)
+```
+
+Notice that there are `r nrow(lat_fromloc)` rows when we were expecting `r nrow(tweets_df)`. Why is this so? After much digging, we find a bug in the package: using `geocode` on the city *Muskegon, MI* returns two rows instead of one. So we add a temporary fix to remove exactly one extra row.
+```{r}
+geocode("Muskegon", "MI")
+# temporary bug fix
+if (nrow(lat_fromloc) == 5001){
+  lat_fromloc <- lat_fromloc[-293,]
+}
+nrow(lat_fromloc)
+```
+Next, we add this data to the `lat` and `lng` columns with values `NA` and calculate how much of the total data now have latitude and longitude vaulues.
+```{r}
+keep_lat <- is.na(tweets_df$lat) == FALSE
+empty_lat <- is.na(tweets_df$lat)
+tweets_df$lat[keep_lat][1:6]
+lat_fromloc$lat[keep_lat][1:6]
+
+#lat_fromloc$lat[keep_lat] <- tweets_df$lat[keep_lat]
+#lat_fromloc$log[keep_lat] <- tweets_df$lng[keep_lat]
+
+tweets_df$lat[empty_lat] <- lat_fromloc$lat[empty_lat]
+tweets_df$lng[empty_lat] <- lat_fromloc$lon[empty_lat]
+
+(new_lat_percent = sum(is.na(tweets_df$lng) == FALSE)/dim(tweets_df)[1]*100)
+```
+Using the `location` column data, we easily converted `r new_lat_percent` percent of the data to latitude and longitdue coordinates!
+
 ## N-grams
 A common NLP data exploration practice is looking at n-gram frequencies.
 *N-grams* are sequences of *n* items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams, meaning one word, two word, and three word combinations.
@@ -328,10 +415,10 @@ We find the top 10 most common words or unigrams to see common topics in our dat
 unigram_count <- text_df_stemmed %>% dplyr::count(word, sort = TRUE)
 head(unigram_count,20)
 ```
-We can graph the unigram frequencies with ggplot for a nice visualization of our text data. We pick a number of appearances to filter smaller than the total tweets we have (5,000) to plot only the top few words.
+We can graph the unigram frequencies with `ggplot2` for a nice visualization of the most common words in our dataset. We use the `dplyr::top_n` function to select the 12 most frequent words, `reorder` to order them by most frequent to least, and `ggplot` to add plotting attributes.
 ```{r}
 unigram_count %>%
-  filter(n>100) %>%
+  top_n(12) %>%
   mutate(word = reorder(word, n)) %>%
   ggplot(aes(word, n)) +
   geom_col() +
@@ -348,7 +435,9 @@ bigrams_stemmed <- text_df_stemmed %>%
   unnest_tokens(bigram, word, token = "ngrams", n = 2)
 
 head(bigrams_stemmed)
+```
 
+```{r}
 head(bigrams_stemmed %>%
   dplyr::count(bigram, sort = TRUE),10)
 ```
@@ -360,36 +449,43 @@ unigram_count %>%
 ```
 
 ## Sentiment
-We want to classify the tweets by sentiment, or rather by the feelings and emotions portrayed by the user. As humans we can easily tell if someone is angry, sad, satisfied, or even sarcastic. However we have to give the computer some clues on how to do this start with the `sentiments` dataset which is loaded with the `tidytext` library. Similar to the `stop_words` dataset, there are three lexicons:
+We want to classify the tweets by sentiment, or rather by the feelings and emotions portrayed by the user. As humans, we can usually tell if someone is angry, sad, satisfied, or even sarcastic. However we have to give the computer some clues on how to do this. We start with the `sentiments` dataset, which is loaded with the `tidytext` library. Similar to the `stop_words` dataset, there are three lexicons for each word:
 
 * `afinn` gives each word an integer score between -5 and 5, from most negative to most positive sentiment.
 
-* `bing` gives a binary "negative" or "positive" sentiment to each words.
+* `bing` gives a binary "negative" or "positive" sentiment to each word.
 
 * `nrc` assigns sentiment labels of "positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust."
 
-We can also use the tidytext's `get_sentiments()` function to only get data from a particular lexicon.
-
 ```{r}
 head(sentiments)
+```
+We can also use the tidytext's `get_sentiments()` function to only get data from a particular lexicon.
+```{r}
 head(get_sentiments('afinn'))
 ```
+The words in the first 6 rows of the above dataset happen to have a score of -2, indicating mildly negative sentament.
 
-"How were these sentiment lexicons put together and validated? They were constructed via either crowdsourcing (using, for example, Amazon Mechanical Turk) or by the labor of one of the authors, and were validated using some combination of crowdsourcing again, restaurant or movie reviews, or Twitter data. Given this information, we may hesitate to apply these sentiment lexicons to styles of text dramatically different from what they were validated on, such as narrative fiction from 200 years ago. While it is true that using these sentiment lexicons with, for example, Jane Austen’s novels may give us less accurate results than with tweets sent by a contemporary writer, we still can measure the sentiment content for words that are shared across the lexicon and the text."
-(note to self)
+To learn about how the `sentiments` dataset was constructed, read the following quote from [Chapter 2](https://www.tidytextmining.com/sentiment.html) of the online textbook, Text Mining with R:
 
-Next let's merge some of our data with the sentiment lexicon "afinn" to explore our text.
+*"How were these sentiment lexicons put together and validated? They were constructed via either crowdsourcing (using, for example, Amazon Mechanical Turk) or by the labor of one of the authors, and were validated using some combination of crowdsourcing again, restaurant or movie reviews, or Twitter data. Given this information, we may hesitate to apply these sentiment lexicons to styles of text dramatically different from what they were validated on, such as narrative fiction from 200 years ago. While it is true that using these sentiment lexicons with, for example, Jane Austen’s novels may give us less accurate results than with tweets sent by a contemporary writer, we still can measure the sentiment content for words that are shared across the lexicon and the text."*
+
+
+Next let's merge our Twitter data with the sentiments data to explore the sentiment of the language used in the tweets. For a quick example, we will use the "afinn" lexicon and set the score to -2 to find some mildly negative words in the Twitter data.
+
+First we use the `get_sentiments` function to get only the "afinn" lexicon data. We then filter the data so that we only have words with scores of -2.
 ```{r}
 nrc_example <- get_sentiments("afinn") %>% 
   filter(score == -2)
-
+```
+Next, we use the `inner_join` function to find words that are in both our Twitter dataset and in our sample sentiments dataset: words that have a sentiment score of -2. We sort them by the most frequent and print the first 10 rows with `head`.
+```{r}
 head(text_df %>%
   inner_join(nrc_example) %>%
   dplyr::count(word, sort = TRUE),10)
 ```
-We note that sentiment analysis would not be straight-forward. From the text printed above, we can't exactly pinpoint if the user is being negative about vaccinations, or the effects of not getting vaccinated, or just being negative about the anti-vaccination or vaccination communities.
 
-Let's plot the average `afinn` scores for each tweet to explore the overall sentiment of our data.
+Since the "afinn" lexicon is numerical, we can plot the average "afinn" scores for each tweet to explore the overall sentiment of our data.
 
 ```{r,message=FALSE}
 library(tidyr)
@@ -397,9 +493,9 @@ head(text_df)
 
 tweet_sentiment <- text_df %>%
   inner_join(get_sentiments("afinn")) %>%
-  dplyr::group_by(int) %>%
-  dplyr::mutate(text = paste0(word)) %>%
-  dplyr::summarize(sentiment_mean = mean(score))
+  group_by(int) %>%
+  mutate(text = paste0(word)) %>%
+  summarize(sentiment_mean = mean(score))
 
 tweet_sentiment_ordered <- tweet_sentiment[order(tweet_sentiment$sentiment_mean),] 
 
@@ -410,14 +506,8 @@ ggplot(tweet_sentiment_ordered, aes(sentiment_mean)) +
   ggtitle("Mean afinn sentiment score per tweet") + 
   geom_vline(xintercept = 0, linetype = "dashed", colour = "red") +
   ylab(NULL)
- # #facet_wrap(~book, ncol = 2, scales = "free_x")
-
-
 ```
-Remember when we said we should consider the negation issue? As in, how can we distinguish between the sentiment of "not like" and "like"?
-
 Let's print out some positive tweets. We can use the index column "int" that we've kept constant to print out the original (sans and Twitter handles) tweets.
-
 ```{r}
 positive <- tweet_sentiment$int[tweet_sentiment$sentiment_mean > 2]
 head(tweets_df$text[positive])
@@ -427,18 +517,12 @@ And let's look at some negative ones as well..
 negative <- tweet_sentiment$int[tweet_sentiment$sentiment_mean < -2 ]
 head(tweets_df$text[negative])
 ```
-Neither the positive nore negative tweets are unanimously on either side of this "issue", even with this small sample of text. Now we can really see how this won't be easy!
-
-We should think about what we can do about the words that won't be found in the `sentiments` dataset, like "#vaccineswork" that might give us even more information about whether or not the tweet is supporting vaccines or not.
-
-Sentiment may be just a small part of clustering tweets as "pro-vaccination" or "anti-vaccination."
-
-http://www.public.asu.edu/~huanliu/papers/sbp14.pdf
+Neither the positive nore negative tweets are unanimously pro- or anti-vax, even with this small sample of text. Because of this, we will not be able to use sentiment as a method to classify tweets, but rather as an evalutaion metric.
 
 # Data analysis
 
 ## Topic Modeling
-Since our data is unsupervised, meaning we don't have any prior knowledge or labels to tell us if a tweet is pro or anti vaccine, we want to use topic modeling to seperate the tweets into the two sides using only the text. 
+Since our data is unsupervised, meaning we don't have any prior knowledge or labels that tell us if a tweet is pro- or anti-vaccination, we are going to use *topic modeling* to seperate the tweets into the two sides using only the text. 
 
 Latent Dirichlet allocation (LDA) is common topic modeling method: it views each document (or in our case, each tweet) as a mixture of topics, and each topic as a combination of words. A word can be part of multiple topics, thus allowing some overlap.
 
@@ -450,14 +534,21 @@ dtm_df <- text_df_stemmed_common %>%
 
 head(dtm_df)
 ```
-Next, we simply use the command `tidytext::cast_dtm` to convert to a document term matrix, a structure where each row is a document and each column is a word.
+Next, we simply use the command `tidytext::cast_dtm` to convert to a document term matrix, a structure where each row is a document and each column is a word. You can explore the DTM in your console with the command `text_dtm$` followed by "i", "j", "v", "nrow", "ncol", or "dimnames."
 ```{r}
 (text_dtm <- dtm_df %>%
   cast_dtm(int, word, n))
 
+typeof(text_dtm)
+
 head(Terms(text_dtm))
+```
+We see that the terms in the DTM are the words from each tweet.
+```{r}
 head(Docs(text_dtm))
 ```
+The "Docs" or documents are simply the tweets, numbers 1 through `{r} text_dtm$nrow`.
+
 Now we are ready to apply LDA to our DTM. We set `k=2` because we are trying to create two categories of tweets: pro and anti vaccination. However, we should consider trying 3 categories later, the third being "other" tweets that are irrelevant to the debate. Note that we have no control over whether these will be the two or three clear categories, but it is the goal we are trying to achieve.
 
 We also set an arbitrary seed to ensure we recreate the same results each time we run the code.
@@ -473,7 +564,7 @@ head(topics_k2)
 ```
 Notice this dataframe is again in the "tidy" format with one word/topic per row.
 
-We can plot the most probable words for each topic by first creating a dataframe with the top 15 words for each topic.
+We can plot the most probable words in each topic by first creating a dataframe with the top 15 words for each topic.
 
 Then we sort by the top terms and plot the data with `ggplot2`. In this case we filter by topic to show the differences.
 ```{r}
@@ -501,9 +592,10 @@ beta_spread <- topics_k2 %>%
   mutate(log_ratio = log2(topic_1 / topic_2))
 
 head(beta_spread,10)
+nrow(beta_spread)
 ```
 Next we filter the log ratio to display just a few common terms with the largest differences between beta values. 
-Note that since our log ratio is $log(\frac{topic_1}{topic_2})$, if the beta value for topic 1 is larger, the log ratio will be positive. Again this means that the particular word is more likely to fall in topic 1 instead of 2. The reverse is true (if $\beta_{t2} > \beta_{t1}$, then the log is negative).
+Note that since our log ratio is $log(\frac{\beta_{topic_1}}{\beta_{topic_2}})$, if the beta value for topic 1 is larger, the log ratio will be positive. Again this means that the particular word is more likely to fall in topic 1 instead of 2. The reverse is true (if $\beta_{t2} > \beta_{t1}$, then the log is negative).
 ```{r}
 beta_spread %>% 
   filter(log_ratio > 4.5 | log_ratio< -4.5) %>%
@@ -512,18 +604,21 @@ beta_spread %>%
   geom_col(show.legend = FALSE) +
   coord_flip()
 ```
+The graph above displays words with the largest magnitude log ratios, out of the `r nrow(beta_spread)` most frequent words in either topic. The positive words are more likely to be in topic 1, and the negative words are more likely to be in topic 2.
 
-Examine group probabilities by tweet
+### Examine group probabilities by tweet
 
 Now that we have examined the *beta* values, or probability a word is in each topic, we now look at the *gamma* $(\gamma)$ probabilities or "per-document-per-topic probabilities."
 
-We create a new dataframe using `tidy()` again and observe how it is arranged: for each topic and document combination (for this dataset, each document is a tweet), there is a gamma value between 0 and 1. 
+We create a new dataframe using `tidy()` and observe how it is arranged: for each topic and document combination (for this dataset, each document is a tweet), there is a gamma value between 0 and 1. 
 
 Next, we look at the tweets with the most extreme $\gamma$ values to get a sense of what we are working with.
 ```{r}
 lda_tweets <- tidy(lda_k2, matrix = "gamma")
 head(lda_tweets)
-
+```
+Next, we look at the tweets with the most extreme $\gamma$ values to get a sense of what we are working with.
+```{r}
 lda_tweets<-lda_tweets %>% arrange(desc(gamma))
 head(lda_tweets)
 ```
@@ -597,126 +692,6 @@ kable(diff_tweets) %>%
   scroll_box(width = "750px", height = "300px")
 ```
 
-
-## Social network analysis
-
-Assuming that, with high probability, users do not change their views (especially within a 7-day window) we can label Twitter users and represent them as a *social network* to help classify tweets.
-
-To do this, we will use the power of retweets. We use Retweets because we can assume that if a user retweets another users tweets about vaccination, they probably agree with their opinion. This assumption gets stronger as the social network grows more connections.
-
-We will build a network using the `igraph` package. This network will have users as nodes or vertices, with an edge between two vertices if the users retweet the same tweet, are following or are friends with the other user, or retweeted a tweet directly from the other user. The weight of the edge will increase if more than one of the previous are true.
-
-First, we should create a data frame where the first two columns are vertices with an edge between them. 
-
-add attributes if there are multiple connections necessary.
-
-```{r}
-
-tweets_df <- tweets_df %>% 
-  mutate(tweet_factor = 
-           as.numeric(factor(text)) )
-
-l <- list()
-
-for (i in c(1:max(tweets_df$tweet_factor))){
-  users <- unique(c(tweets_df$uuidgens_user[tweets_df$tweet_factor==i],
-                    tweets_df$uuidgens_retweet[tweets_df$tweet_factor==i]))
-  users <- users[is.na(users) == FALSE]
-  l <- append(l, list(users))
-}
-
-```
-Now we have each tweet on the list with the associated users. Now let's create an edge between all these users by creating the dataframe that will be converted to a graph object with `igraph`.
-```{r}
-graph_df <- matrix(ncol=2, nrow=400000)
-index = 1
-
-for (i in c(1:length(l))){
-  if (length(l[[i]]) > 1){
-    combos <- t(combn(l[[i]],2))
-    graph_df[c(index:(index + length(combos[,1])-1)),] <- combos
-    
-    index = index + length(combos[,1]) 
-  }
-}
-
-graph_df <- as.data.frame(graph_df)
-```
-
-Let's delete the extra room
-```{r}
-graph_df<-graph_df[is.na(graph_df$V1) == FALSE,]
-dim(graph_df)
-head(graph_df)
-```
-
-So now we've connect each user to all of its tweets, and each unique tweet to all unique users that retweeted it.
-```{r}
-graph_df$V1 <-as.character(graph_df$V1)
-graph_df$V2 <-as.character(graph_df$V2)
-
-graph_df <- graph_df %>%
-  group_by(V1,V2) %>%
-  tally()
-
-dim(graph_df)
-
-#df1 <- data.frame(t(apply(graph_df[1:2], 1, sort)), graph_df[3])
-#df1 <- aggregate(n~., df1, FUN=sum)
-```
-
-
-```{r}
-vtx_df <- data.frame("unique_vtcs" = unique(c(graph_df$V1, graph_df$V2)))
-head(vtx_df)
-```
-Set remaining vertices to -1 so they are ignored (initialized vertices)
-```{r}
-g <- graph_from_data_frame(d = graph_df, directed = FALSE, vertices = vtx_df)
-edge_width <- (E(g)$n)**2
-```
-
-Run label propagation, Add vertex attributes and color the largest communities.
-```{r}
-clp <- cluster_label_prop(g, weights = edge_width)#, fixed = vtx_df$fix)
-
-# create some vertex attributes
-V(g)$community <- clp$membership
-head(E(g)$n)
-
-#V(g)$betweenness <- betweenness(g, v = V(g), directed = F)
-#V(g)$degree <- degree(g, v = V(g))
-```
-Data visualization: color the largest communities.
-```{r}
-data <- toVisNetworkData(g)
-nodes <- data[[1]]
-edges <- data[[2]]
-
-edge_width <- (E(g)$n)**2
-
-library(RColorBrewer)
-
-get_big_coms <- nodes %>% 
-  select(community) %>% 
-  group_by(community) %>% 
-  tally() %>%
-  arrange(desc(n))
-
-biggest_groups<- get_big_coms$community[1:2]
-
-col <- rep("grey", length(V(g)))
-colors<- brewer.pal(10, "Paired")
-
-for(j in c(1:2)){
-  col[V(g)$community == biggest_groups[j]] <- colors[j]
-}
-```
-
-Now that we have created all the labels we can display the graph with `graphjs`.
-```{r}
-graphjs(g, vertex.color = col,  vertex.size = .3,  edge.width = edge_width, na.ok = TRUE)
-```
 
 # Summary of results
 Here I will compare the results from the topic modeling to the social network approach. We will see if the same tweets were clustered into the same communities. We will map the results to see if there is a geographical trend.
