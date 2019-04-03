@@ -38,6 +38,10 @@ The libraries used in this study are listed in the following table, along with t
 |`ggplot2`|Plotting sentiment|
 |`wordcloud`|Creating wordcloud visuals|
 |`SnowballC`|Word stemming|
+|`tm`|Document Term Matrix Class|
+|`topicmodels`|Applying Latent Dirichlet allocation|
+|`kableExtra`|Formatting output into tables|
+|`localgeo`|Converting city data to latitude and longitude|
 
 In order to run this code please ensure you have these packages installed. 
 
@@ -77,7 +81,7 @@ st <- lat_lng(st) #note
 ```
 After collecting the tweets with the `rtweet` package, we exported the data as a csv file. This is an important step because the data you collect with the API can be very different every time. It also takes a few minutes to download new tweets.
 
-Before exporting as a CSV we removed the columns that contained lists because this is not compatable for export.
+Before exporting as a CSV we removed the columns that contained lists because this is not compatible for export.
 ```{r eval=FALSE}
 for (col in colnames(st))
   {
@@ -93,26 +97,16 @@ We've stored one such twitter dataset in the file __. This dataset will be used 
 # Data import
 Before doing anything, we should load the libraries needed for the case study.
 ```{r, message = FALSE}
-library(kableExtra)
-library(stringr)
-library(lexicon)
-
-library(tidytext)
 library(dplyr)
+library(tidytext)
 library(ggplot2)
+library(stringr)
 library(kableExtra)
-library(tidyr)
-library(tm)
-library(topicmodels)
-
 library(wordcloud)
 library(SnowballC)
-
+library(localgeo)
+library(tm)
 library(topicmodels)
-
-library(igraph)
-library(threejs)
-library(visNetwork)
 ```
 
 Now we import the data as a dataframe with `read.csv` and look at all the fields/columns by printing out the `colnames.` Note that each row of the dataframe contains information about *one tweet*. We print out the first row with `head(tweets_df,1)` to get an idea of what kind of information is in each row and column.
@@ -138,7 +132,7 @@ We describe a few of the notable columns in the following table as they relate t
 
 "NA" in the `uuidgens_retweet` row indicates the tweet was not a retweet, which we can also see in the column `is_retweet` where the value is "FALSE".
 
-We point out that the columns beginning with "uuidgens" did not come with `rtweet` package. They were generated in a seperate file to remove identifiers to avoid assuming or exploiting political or religious views and/or the state of someone's health. When importing the data with `rtweet`, there are many columns with identifiers. Each tweet has an associated user `screen_name` (usually referred to as the user's Twitter handle), a `name`, and `user_id.` Every Twitter user has a unique user ID, however these IDs are publically traceable to the user names. Thus, all of these fields need to be removed, as well as related fields such as `retweet_user_id.`
+We point out that the columns beginning with "uuidgens" did not come with `rtweet` package. They were generated in a separate file to remove identifiers to avoid assuming or exploiting political or religious views and/or the state of someone's health. When importing the data with `rtweet`, there are many columns with identifiers. Each tweet has an associated user `screen_name` (usually referred to as the user's Twitter handle), a `name`, and `user_id.` Every Twitter user has a unique user ID, however these IDs are publicly traceable to the user names. Thus, all of these fields need to be removed, as well as related fields such as `retweet_user_id.`
 Here is how we created the IDs:
 
 - We first found all the unique user IDs from the columns `user_id`, `quoted_user_id`, and `retweet_user_id`
@@ -146,7 +140,7 @@ with `unique_ids <- unique(c(d$user_id, d$retweet_user_id, d$quoted_user_id))`.
 
 - Then, we generated as many unique IDs as we had unique users with `dplR::uuid.gen` and created a dataframe with two columns: one with the original unique IDs, and the second with the generated unique IDs. 
 
-- We merged this data three seperate times with the tweets dataframe on the columns `user_id`, `quoted_user_id`, and `retweet_user_id` columns to create the columns `uuidgens_user`, `uuidgens_retweet`, and `uuidgens_quote.` 
+- We merged this data three separate times with the tweets dataframe on the columns `user_id`, `quoted_user_id`, and `retweet_user_id` columns to create the columns `uuidgens_user`, `uuidgens_retweet`, and `uuidgens_quote.` 
 
 To see the exact code, please refer to the appendix.
 
@@ -182,7 +176,7 @@ Let's break down each of the strings in `pat` and explain what text it is meant 
 
 Next, we break down one of the above patterns, `@.*?[ \t\r\n]`, to see how regular expressions work.
 
-First, `@` simply matches with the @ sign, the beginning of tagging a user on Twitter. In regular expression "." can match with any character except for newline `\n`. The "`*`" character matches 0 or more of the previous character. For example, `s*` matches with "", "s", "ssss", etc. In this case we have `@.*`, so we are matching 0 or more of "." or any character. So now we have matched with anything beginning with @. Next, the "?" quantifier is *non-greedy*, meaning it matches as few characters as possible. We want to include this so that we remove the minimum amount of text and thus only the username tag. We stop removing text when we reach a space, tab, carriage return or newline character, `[ \t\r\n]`. Thus, `@.*?[ \t\r\n]` matches with any username that is retweeted or tagged. Let's see what happens when we use only this pattern in `str_replace_all`, which matches all occurences of the pattern (hence, the addition of `_all`). Each match is replaced with an empty string `""` thus removing the unwanted string.
+First, `@` simply matches with the @ sign, the beginning of tagging a user on Twitter. In regular expression "." can match with any character except for newline `\n`. The "`*`" character matches 0 or more of the previous character. For example, `s*` matches with "", "s", "ssss", etc. In this case we have `@.*`, so we are matching 0 or more of "." or any character. So now we have matched with anything beginning with @. Next, the "?" quantifier is *non-greedy*, meaning it matches as few characters as possible. We want to include this so that we remove the minimum amount of text and thus only the username tag. We stop removing text when we reach a space, tab, carriage return or newline character, `[ \t\r\n]`. Thus, `@.*?[ \t\r\n]` matches with any username that is retweeted or tagged. Let's see what happens when we use only this pattern in `str_replace_all`, which matches all occurrences of the pattern (hence, the addition of `_all`). Each match is replaced with an empty string `""` thus removing the unwanted string.
 
 ```{r}
 remove_handle <- tweets_df %>% 
@@ -239,7 +233,7 @@ head(text_df,10)
 ```
 Now that we have our data in a "tidy" format, we want to remove stop words from the text. *Stop words* in NLP are common words that don't add value to a sentence, paragraph, document etc. For example, "still think the flu shot is..." doesn't give us any extra information than "still think flu shot," so we can remove "the" and "is" to make our dataset more concise.
 
-You can find lists of stopwords in the `stop_words` dataset, which has two columns: `word` and `lexicon`. There are three different lexicons that reference the *source* of the stop word:
+You can find lists of stop words in the `stop_words` dataset, which has two columns: `word` and `lexicon`. There are three different lexicons that reference the *source* of the stop word:
 
 - [onix](http://www.lextek.com/manuals/onix/stopwords1.html)
 
@@ -265,14 +259,14 @@ head(text_df,10)
 ```
 If you compare this dataframe to `text_df` before the anti-join, you notice that the words "no", "to", "be", and "need" have been removed.
 
-If we wanted to select a specific lexicon, such as the smallest set of stopwords "snowball", we would use `dplyr::filter` command as shown below.
+If we wanted to select a specific lexicon, such as the smallest set of stop words "snowball", we would use `dplyr::filter` command as shown below.
 ```{r eval = FALSE}
 text_df <- text_df %>%
   anti_join(stop_words %>% filter(lexicon == "snowball"))
 ```
 
 ## Stemming
-Another technique often used alongside removing stopwords is word *stemming*. Stemming changes each word to a root word so that different conjugations of the same word are not treated as different words completely. A human can tell that "vaccine", vaccinate" and "vaccination" have close to the same meaning. However, for example, if we were to count every repetition of "vaccine" in R we would not get an accurate total since "vaccination" would be ignored. Instead, we apply a stemming algorithm which changes each of those words to "vaccin."
+Another technique often used alongside removing stop words is word *stemming*. Stemming changes each word to a root word so that different conjugations of the same word are not treated as different words completely. A human can tell that "vaccine", vaccinate" and "vaccination" have close to the same meaning. However, for example, if we were to count every repetition of "vaccine" in R we would not get an accurate total since "vaccination" would be ignored. Instead, we apply a stemming algorithm which changes each of those words to "vaccin."
 
 We will use the library `SnowballC` which implements the [Porter stemming algorithm](http://snowball.tartarus.org/algorithms/porter/stemmer.html). The command `SnowballC::wordStem` returns the stem of each word in a given vector.
 
@@ -281,9 +275,9 @@ text_df_stemmed <- text_df %>%
   mutate(word = wordStem(word))
 head(text_df_stemmed,10)
 ```
-Since we've filtered and removed the most common english words--the stop words--let us also remove the most *uncommon* words in our dataset. This helps reduce the size of our data and remove meaningless words to this analysis, such as uncommon pronouns.
+Since we've filtered and removed the most common English words--the stop words--let us also remove the most *uncommon* words in our dataset. This helps reduce the size of our data and remove meaningless words to this analysis, such as uncommon pronouns.
 
-First, we create a temporay dataframe `temp` where each row contains a unique word from our data followed by the number of times this word is repeated in the dataset.
+First, we create a temporary dataframe `temp` where each row contains a unique word from our data followed by the number of times this word is repeated in the dataset.
 ```{r}
 temp <- text_df_stemmed %>%
   dplyr::count(word)
@@ -332,7 +326,7 @@ ggplot(data = states) +
   theme_void()
 ```
 
-As we can there is some missing latitute and longitude data. This is expected, since we assume most users do not have their location turned on on  twitter. We calculate exactly what percentage of tweets do not have an associated latitude and longitude below.
+As we can there is some missing latitude and longitude data. This is expected, since we assume most users do not have their location turned on on  twitter. We calculate exactly what percentage of tweets do not have an associated latitude and longitude below.
 ```{r}
 (have_lat = sum(is.na(tweets_df$lat) ==FALSE)/dim(tweets_df)[1]*100)
 ```
@@ -351,7 +345,6 @@ We see that the format of most of the locations is a little different, however t
 The function `localgeo::geocode` takes two strings as input: a city, starting with a capital letter, and a state abbreviation in all capital letters.
 `devtools::install_github("hrbrmstr/localgeo")`
 ```{r}
-library(localgeo)
 geocode("Baltimore","MD")
 geocode("baltimore","MD")
 geocode("Baltimore","Maryland")
@@ -388,28 +381,31 @@ if (nrow(lat_fromloc) == 5001){
 }
 nrow(lat_fromloc)
 ```
-Next, we add this data to the `lat` and `lng` columns with values `NA` and calculate how much of the total data now have latitude and longitude vaulues.
+Next, we add this data to the `lat` and `lng` columns with values `NA` and calculate how much of the total data now have latitude and longitude values.
 ```{r}
 keep_lat <- is.na(tweets_df$lat) == FALSE
 empty_lat <- is.na(tweets_df$lat)
 tweets_df$lat[keep_lat][1:6]
 lat_fromloc$lat[keep_lat][1:6]
 
-#lat_fromloc$lat[keep_lat] <- tweets_df$lat[keep_lat]
-#lat_fromloc$log[keep_lat] <- tweets_df$lng[keep_lat]
-
 tweets_df$lat[empty_lat] <- lat_fromloc$lat[empty_lat]
 tweets_df$lng[empty_lat] <- lat_fromloc$lon[empty_lat]
 
 (new_lat_percent = sum(is.na(tweets_df$lng) == FALSE)/dim(tweets_df)[1]*100)
 ```
-Using the `location` column data, we easily converted `r new_lat_percent` percent of the data to latitude and longitdue coordinates!
+Using the `location` column data, we easily converted `r new_lat_percent` percent of the data to latitude and longitude coordinates! Now we plot the map again to show how much more data we have now.
+```{r}
+ggplot(data = states) + 
+  geom_point(data = tweets_df, aes(x = lng, y = lat,  colour = Hashtags), size = 1) +
+  geom_polygon(aes(x = long, y = lat, group=group), fill = NA, color = "dark grey") +
+  theme_void()
+```
 
 ## N-grams
 A common NLP data exploration practice is looking at n-gram frequencies.
 *N-grams* are sequences of *n* items/tokens. Common n-grams that are used in NLP are unigrams, bigrams, and trigrams, meaning one word, two word, and three word combinations.
 
-We find the top 10 most common words or unigrams to see common topics in our data. Recall that we have already removed stopwords and unnecessary items such as web links, and we have stemmed the remaining words.
+We find the top 10 most common words or unigrams to see common topics in our data. Recall that we have already removed stop words and unnecessary items such as web links, and we have stemmed the remaining words.
 
 ```{r}
 unigram_count <- text_df_stemmed %>% dplyr::count(word, sort = TRUE)
@@ -464,7 +460,7 @@ We can also use the tidytext's `get_sentiments()` function to only get data from
 ```{r}
 head(get_sentiments('afinn'))
 ```
-The words in the first 6 rows of the above dataset happen to have a score of -2, indicating mildly negative sentament.
+The words in the first 6 rows of the above dataset happen to have a score of -2, indicating mildly negative sentiment.
 
 To learn about how the `sentiments` dataset was constructed, read the following quote from [Chapter 2](https://www.tidytextmining.com/sentiment.html) of the online textbook, Text Mining with R:
 
@@ -517,12 +513,12 @@ And let's look at some negative ones as well..
 negative <- tweet_sentiment$int[tweet_sentiment$sentiment_mean < -2 ]
 head(tweets_df$text[negative])
 ```
-Neither the positive nore negative tweets are unanimously pro- or anti-vax, even with this small sample of text. Because of this, we will not be able to use sentiment as a method to classify tweets, but rather as an evalutaion metric.
+Neither the positive nor negative tweets are unanimously pro- or anti-vax, even with this small sample of text. Because of this, we will not be able to use sentiment as a method to classify tweets, but rather as an evaluation metric.
 
 # Data analysis
 
 ## Topic Modeling
-Since our data is unsupervised, meaning we don't have any prior knowledge or labels that tell us if a tweet is pro- or anti-vaccination, we are going to use *topic modeling* to seperate the tweets into the two sides using only the text. 
+Since our data is unsupervised, meaning we don't have any prior knowledge or labels that tell us if a tweet is pro- or anti-vaccination, we are going to use *topic modeling* to separate the tweets into the two sides using only the text. 
 
 Latent Dirichlet allocation (LDA) is common topic modeling method: it views each document (or in our case, each tweet) as a mixture of topics, and each topic as a combination of words. A word can be part of multiple topics, thus allowing some overlap.
 
@@ -611,8 +607,6 @@ The graph above displays words with the largest magnitude log ratios, out of the
 Now that we have examined the *beta* values, or probability a word is in each topic, we now look at the *gamma* $(\gamma)$ probabilities or "per-document-per-topic probabilities."
 
 We create a new dataframe using `tidy()` and observe how it is arranged: for each topic and document combination (for this dataset, each document is a tweet), there is a gamma value between 0 and 1. 
-
-Next, we look at the tweets with the most extreme $\gamma$ values to get a sense of what we are working with.
 ```{r}
 lda_tweets <- tidy(lda_k2, matrix = "gamma")
 head(lda_tweets)
@@ -622,6 +616,7 @@ Next, we look at the tweets with the most extreme $\gamma$ values to get a sense
 lda_tweets<-lda_tweets %>% arrange(desc(gamma))
 head(lda_tweets)
 ```
+The way to interpret the above information is as follows: tweet `r lda_tweets$document[1]` is more likely to belong in topic `r lda_tweets$topic[2]` because it has a gamma value of `r lda_tweets$gamma[1]` for that topic. Tweet `r lda_tweets$document[2]` is more likely to belong in topic `r lda_tweets$topic[2]` because it has a gamma value of `r lda_tweets$gamma[2]` for that topic, etc.
 
 This doesn't tell us that much until we actually read the tweets in relation to their assigned topics. 
 
@@ -643,7 +638,7 @@ So let's run a similar analysis but instead of starting with the one-token-per-r
 head(text_df_stemmed_common)
 head(bigrams_stemmed)
 ```
-The format is quite similar. Let's proceed in converting `bigrams` to a document term matric (DTM).
+The format is quite similar. Let's proceed in converting `bigrams` to a document term matrix (DTM).
 ```{r}
 dtm_bigram_df <- bigrams_stemmed %>%
   group_by(int, bigram) %>%
@@ -663,7 +658,7 @@ This time, let's try using `k = 3` to see if we can capture the following three 
 
 - Anti-Vaccination
 - Pro-Vaccination
-- Irrelvant/No Opinion
+- Irrelevant/No Opinion
 
 
 ```{r}
@@ -691,9 +686,11 @@ kable(diff_tweets) %>%
   kable_styling("striped", full_width = F) %>%
   scroll_box(width = "750px", height = "300px")
 ```
-
+Topic 2 has many tweets that seem pro-vaccination. However the other two topics are difficult to distinguish.
 
 # Summary of results
-Here I will compare the results from the topic modeling to the social network approach. We will see if the same tweets were clustered into the same communities. We will map the results to see if there is a geographical trend.
+This analysis has demonstrated the difficulty of characterizing unsupervised text data. While we can create groups through topic summarization, we cannot quantify how accurate our algorithm works because we do not have any truth data.
 
+One solution to having unlabeled data of this structure is to use a *semi-supervised* machine learning framework and completing a social network analysis. We can select *seed users*, or prominent figures that clearly have one opinion or another to create labels for part of the data. For example, the World Health Organization and CDC are two entities that would produce pro-vaccination tweets. Using social network analysis would allow us to use algorithms such as the Label Propagation Algorithm to identify users with the same opinion as these seed users. Structuring the network can be done in many different ways: we can connect users who retweeted one another or users that retweet the same tweet. We can also connect tweets by sentiment and key words.
 
+In conclusion, Twitter data is fascinating to analyze: although it is messy and sparse, there is much insight to be gleaned from studying this data. Moreover, analysis can be completed in real time since there is a constant stream of tweets.
