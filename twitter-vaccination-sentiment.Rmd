@@ -21,12 +21,11 @@ Vaccines have faced criticism from the beginning of development. However, recent
 
 The goal of this analysis is to download Twitter data and identify tweets as "pro" or "anti" vaccination. Tweets often have an associated location, thus this would allow researchers to locate communities where anti-vaccination sentiment is growing. This could help healthcare professionals identify communities that are at higher risk of infectious diseases.
 
-In this document, we will provide start-to-finish methods on how to identify Twitter users and tweets that are "anti-vaccination."
+In this document, we will provide methods on how to identify Twitter users and tweets that are "anti-vaccination."
 
 <center>
-![](data/map1.png)
+![](data/word_cloud1.png)
 </center>
-This case study consists of data exploration and visualization using Natural Language Processing techniques, document clustering, and sentiment analysis.
 
 The libraries used in this study are listed in the following table, along with their purpose in this particular case study:
 
@@ -47,7 +46,7 @@ In order to run this code please ensure you have these packages installed.
 
 If you would like to download your own Twitter data, you will need to sign up for a Twitter developer account, create an application, and enter your own keys & credentials in the "What is the data?" section below.
 
-The learning objectives for this case study include data cleaning and manipulation with natural language processing and regular expressions, document clustering/topic modeling, and sentiment analysis.
+The learning objectives for this case study include data cleaning with regular expressions, data exploration and visualization using Natural Language Processing techniques, sentiment analysis, and topic modeling.
 
 # What is the data?
 To collect data from Twitter, we suggest using the `rtweet` package. If you would like to download your own Twitter data, you will need to sign up for a [Twitter developer account](https://developer.twitter.com/en/apply-for-access.html), create an application, and enter your own keys in the R code chunk below. Note that we've set the code chunk `eval = false` so it is ignored when this file is knit.
@@ -316,7 +315,7 @@ tweets_df$Hashtags <- "none"
 tweets_df$Hashtags[anti_lst == 1] <- "antivax"
 tweets_df$Hashtags[pro_lst == 1] <- "vaccines work"
 ```
-Next we use `ggplot2` and `ggmap` to plot this on a map.
+Next we use `ggplot2` to plot this on a map.
 ```{r}
 states <- map_data("state")
 
@@ -400,6 +399,7 @@ ggplot(data = states) +
   geom_polygon(aes(x = long, y = lat, group=group), fill = NA, color = "dark grey") +
   theme_void()
 ```
+There are other things we could do get more lattitude and longitude coordinates. We could convert state names (for example, "Maryland") to their abbreviations ("MD"). We could also ensure the first letter of the city is capitalized and the rest of the letters are lowercase. These additional manipulations are left as an exercise.
 
 ## N-grams
 A common NLP data exploration practice is looking at n-gram frequencies.

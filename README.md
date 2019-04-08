@@ -5,20 +5,36 @@ This case study is part of the [OpenCaseStudies]() project. This work is license
 
 ### Title
 
-Twitter Vaccination Sentiment Analysis
+Twitter Vaccination Opinion Analysis
 
 ### Motivating question
 
-Can we find communities with negative sentiment towards vaccinations that are at higher risk of disease?
+Can we find communities of anti-vaccination individuals  on Twitter?
 
 ### Data
 
-We will download a set of tweets using the Twitter API.
+A Twitter dataset has been included in this case study for easy use. A short description on how to generate an identical dataset using the Twitter API package [rtweet](https://rtweet.info/) is included in the study.
 
 ### Analysis
 
-Sentiment analysis will be completed with the tidy text format, including dplyr, tidyr, and tidytext.
+The analysis includes data cleaning with regular expressions, data exploration and visualization using Natural Language Processing techniques, sentiment analysis, and topic modeling.
+
+### Note to Instructors
+
+This case study is a comprehensive introduction to working with text data:
+
+- The tidytext library is the foundation of the study, allowing students to continue using tidyverse libraries such as "dplyr" and "ggplot2".
+
+- For cleaning text data, the package `stringr` is used to parse strings with regular expressions.
+
+- Natural language processing methods such as tokenization, word stemming, removing stop words, and finding n-grams are introduced as a means to clean and explore text data.
+
+- Sentiment analysis with the tidytext library is introduced
+
+- Document clustering or Topic Modeling is performed using Latent Dirichlet allocation from the  `topicmodels` package.
 
 ### Other notes and resources
 
 A great resource for this work is [Text Mining with R](https://www.tidytextmining.com/index.html), A Tidy Approach by Julia Silge and David Robinson.
+
+### Keywords
