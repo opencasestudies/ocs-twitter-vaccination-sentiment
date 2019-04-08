@@ -25,16 +25,16 @@ This case study is a comprehensive introduction to working with text data:
 
 - The `tidytext` library is the foundation of the study, allowing students to continue using tidyverse libraries such as `dplyr` and `ggplot2`.
 
-- For cleaning text data, the package `stringr` is used to parse strings with regular expressions.
+- The package `stringr` is used to clean text data with regular expressions.
 
-- Natural language processing methods such as tokenization, word stemming, removing stop words, and finding n-grams are introduced as a means to clean and explore text data.
+- Natural language processing methods such as tokenization, word stemming, removing stop words, and finding n-grams are introduced as means to clean and explore text data.
 
 - Sentiment analysis with the `tidytext` library is introduced.
 
 - Document clustering or topic modeling is performed using Latent Dirichlet allocation from the `topicmodels` package.
 
+- Data visualization with `ggplot2` is frequent throughout the case study.
+
 ### Other notes and resources
 
 A great resource for this work is [Text Mining with R](https://www.tidytextmining.com/index.html), A Tidy Approach by Julia Silge and David Robinson.
-
-### Keywords
