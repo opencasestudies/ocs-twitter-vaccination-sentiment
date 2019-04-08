@@ -13,7 +13,7 @@ Can we find communities of anti-vaccination individuals  on Twitter?
 
 ### Data
 
-A Twitter dataset has been included in this case study for easy use. A short description on how to generate an identical dataset using the Twitter API package [rtweet](https://rtweet.info/) is included in the study.
+A Twitter dataset has been included in this case study for your convenience. A short description on how to generate an identical dataset using the Twitter API package `rtweet` is also included in the study if you would like to create your own.
 
 ### Analysis
 
@@ -23,15 +23,15 @@ The analysis includes data cleaning with regular expressions, data exploration a
 
 This case study is a comprehensive introduction to working with text data:
 
-- The tidytext library is the foundation of the study, allowing students to continue using tidyverse libraries such as "dplyr" and "ggplot2".
+- The `tidytext` library is the foundation of the study, allowing students to continue using tidyverse libraries such as `dplyr` and `ggplot2`.
 
 - For cleaning text data, the package `stringr` is used to parse strings with regular expressions.
 
 - Natural language processing methods such as tokenization, word stemming, removing stop words, and finding n-grams are introduced as a means to clean and explore text data.
 
-- Sentiment analysis with the tidytext library is introduced
+- Sentiment analysis with the `tidytext` library is introduced.
 
-- Document clustering or Topic Modeling is performed using Latent Dirichlet allocation from the  `topicmodels` package.
+- Document clustering or topic modeling is performed using Latent Dirichlet allocation from the `topicmodels` package.
 
 ### Other notes and resources
 
