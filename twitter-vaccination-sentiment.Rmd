@@ -399,6 +399,7 @@ ggplot(data = states) +
   geom_polygon(aes(x = long, y = lat, group=group), fill = NA, color = "dark grey") +
   theme_void()
 ```
+
 There are other things we could do get more lattitude and longitude coordinates. We could convert state names (for example, "Maryland") to their abbreviations ("MD"). We could also ensure the first letter of the city is capitalized and the rest of the letters are lowercase. These additional manipulations are left as an exercise.
 
 ## N-grams
@@ -694,3 +695,48 @@ This analysis has demonstrated the difficulty of characterizing unsupervised tex
 One solution to having unlabeled data of this structure is to use a *semi-supervised* machine learning framework and completing a social network analysis. We can select *seed users*, or prominent figures that clearly have one opinion or another to create labels for part of the data. For example, the World Health Organization and CDC are two entities that would produce pro-vaccination tweets. Using social network analysis would allow us to use algorithms such as the Label Propagation Algorithm to identify users with the same opinion as these seed users. Structuring the network can be done in many different ways: we can connect users who retweeted one another or users that retweet the same tweet. We can also connect tweets by sentiment and key words.
 
 In conclusion, Twitter data is fascinating to analyze: although it is messy and sparse, there is much insight to be gleaned from studying this data. Moreover, analysis can be completed in real time since there is a constant stream of tweets.
+
+# Appendix
+Here we illustrate how to generate unique IDs for each user and reconstruct the dataframe of tweets with this information. This is only necessary if you want to post the data and assumptions about the data. Please read the Twitter developer policies found [here](https://developer.twitter.com/en/developer-terms/agreement-and-policy.html).
+
+Let `d` be the data we created and exported in the "What is the data?" section. First, use the function `dplR::uuid.gen` to generate unique IDs.
+```{r eval = FALSE}
+unique_ids <- unique(c(d$user_id, d$retweet_user_id, d$quoted_user_id))
+
+library(dplR)
+ug <- uuid.gen()
+uuids <- character(length(unique_ids))
+for(i in 1:length(unique_ids)){
+  uuids[i] <- ug()
+}
+```
+We create a data frame `id_merge_df` with two columns: `unique_ids` has the unique user ids from users that created the tweets and those the tweets were retweeted from. The second column `uuidgens_user` contains a list of unique ids. We consider each row as an assignment of a unique id to a unique user.
+
+```{r eval = FALSE}
+id_merge_df <- data.frame("unique_id" = unique_ids, "uuidgens_user" = uuids)
+head(id_merge_df)
+
+#Merge on the users
+df_withIDs <- merge(d, id_merge_df, by.x = "user_id", by.y = "unique_id", all.x = TRUE, all.y = FALSE, sort = FALSE)
+
+# Rename column to merge on the retweeted users
+colnames(id_merge_df)[2]<-"uuidgens_retweet"
+df_withIDs <- merge(df_withIDs, id_merge_df, by.x = "retweet_user_id", by.y = "unique_id", all.x = TRUE, all.y = FALSE, sort = FALSE)
+
+# Rename columnd to merge on the quoted users
+colnames(id_merge_df)[2]<-"uuidgens_quote"
+df_withIDs <- merge(df_withIDs, id_merge_df, by.x = "quoted_user_id", by.y = "unique_id", all.x = TRUE, all.y = FALSE, sort = FALSE)
+
+head(df_withIDs[c("user_id","uuidgens_user", "retweet_user_id", "uuidgens_retweet", "quoted_user_id","uuidgens_quote")])
+```
+Set the uuids that are associated with "na" to na.
+```{r eval = FALSE}
+na_uuid <- id_merge_df$uuidgens_quote[is.na(id_merge_df$unique_id)]
+print(na_uuid)
+df_withIDs$uuidgens_retweet[df_withIDs$uuidgens_retweet == na_uuid]<-NA
+df_withIDs$uuidgens_quote[df_withIDs$uuidgens_quote == na_uuid]<-NA
+```
+Next, save to a csv:
+```{r eval=FALSE}
+write.csv(df_withIDs, file = "data_name.csv", row.names = FALSE, fileEncoding = "UTF-8")
+```
