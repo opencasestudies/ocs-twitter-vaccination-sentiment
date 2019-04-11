@@ -5,7 +5,7 @@ This case study is part of the [OpenCaseStudies]() project. This work is license
 
 ### Title
 
-Twitter Vaccination Opinion Analysis
+Twitter Vaccination Text Mining
 
 ### Motivating question
 
