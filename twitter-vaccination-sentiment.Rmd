@@ -3,6 +3,7 @@ title: "Twitter Vaccination Sentiment Analysis"
 author: "Alexandra Stephens"
 output:
   html_document:
+    code_download: true
     highlight: tango
     number_sections: no
     theme: cosmo
@@ -472,8 +473,11 @@ Next let's merge our Twitter data with the sentiments data to explore the sentim
 
 First we use the `get_sentiments` function to get only the "afinn" lexicon data. We then filter the data so that we only have words with scores of -2.
 ```{r}
+#nrc_example <- get_sentiments("afinn") %>% 
+#  filter(score == -2)
+
 nrc_example <- get_sentiments("afinn") %>% 
-  filter(score == -2)
+  filter(value == -2)
 ```
 Next, we use the `inner_join` function to find words that are in both our Twitter dataset and in our sample sentiments dataset: words that have a sentiment score of -2. We sort them by the most frequent and print the first 10 rows with `head`.
 ```{r}
@@ -487,12 +491,18 @@ Since the "afinn" lexicon is numerical, we can plot the average "afinn" scores f
 ```{r,message=FALSE}
 library(tidyr)
 head(text_df)
+# 
+# tweet_sentiment <- text_df %>%
+#   inner_join(get_sentiments("afinn")) %>%
+#   group_by(int) %>%
+#   mutate(text = paste0(word)) %>%
+#   summarize(sentiment_mean = mean(score))
 
 tweet_sentiment <- text_df %>%
   inner_join(get_sentiments("afinn")) %>%
   group_by(int) %>%
   mutate(text = paste0(word)) %>%
-  summarize(sentiment_mean = mean(score))
+  summarize(sentiment_mean = mean(value))
 
 tweet_sentiment_ordered <- tweet_sentiment[order(tweet_sentiment$sentiment_mean),] 
 
