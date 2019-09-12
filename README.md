@@ -1,3 +1,12 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+# OpenCaseStudies
+
+<!-- badges: start -->
+[![Build Status](https://travis-ci.org/opencasestudies/ocs-twitter-vaccination-text-mining.svg?branch=master)](https://travis-ci.org/opencasestudies/ocs-twitter-vaccination-text-mining)
+<!-- badges: end -->
+
 # OpenCaseStudies
 
 This case study is part of the [OpenCaseStudies]() project. This work is licensed under the Creative Commons Attribution-NonCommercial 3.0 ([CC BY-NC 3.0](https://creativecommons.org/licenses/by-nc/3.0/us/)) United States License.
